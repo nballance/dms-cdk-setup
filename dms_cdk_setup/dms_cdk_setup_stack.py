@@ -17,19 +17,46 @@ class DmsCdkSetupStack(Stack):
         # target_endpoint = 'kafka'
 
         """
-        Phase #1: Provision source and target infrastructure
-        Phase #2: Create source and target endpoint
-        Phase #3: Create DMS replication instance and DMS task
+        Phase #1: Create VPC and Security Groups
+        Phase #2: Provision source and target resources
+        Phase #3: Create source and target endpoint
+        Phase #4: Create DMS replication instance and DMS task
         """
 
+
+
+
+        
         """
-        Phase #1: Provision source and target infrastructure
+        Phase #1: Create VPC and Security Groups
+        Create with best practices in mind for public and private subnets
+        """
+        vpc = ec2.Vpc(self, 'DMSVPC', 
+            cidr="10.0.0.0/16",
+            max_azs=3,
+            subnet_configuration=[
+                ec2.SubnetConfiguration(
+                    cidr_mask=24,
+                    name='public1',
+                    subnet_type=ec2.SubnetType.PUBLIC
+                ),
+                ec2.SubnetConfiguration(
+                    cidr_mask=24,
+                    name='private1',
+                    subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
+                )
+            ]  
+        )
+
+        # vpc = ec2.Vpc(self, "DMSVPC",
+        #     cidr="10.0.0.0/16"
+        # )     
+        #    
+
+        """
+        Phase #2: Provision source and target resources
         This will be the bulk of the code. Need to provision infrastructure based on inputs. Will make check if it is valid source/target EP here.
         """
-
-        vpc = ec2.Vpc(self, "DMSVPC",
-            # cidr="10.0.0.0/16"
-        )        
         # RDS CLUSTER: Aurora PostgreSQL/MySQL 
         # Valid for: Source and Target
 
@@ -56,13 +83,13 @@ class DmsCdkSetupStack(Stack):
 
 
         """
-        Phase #2: Create source and target endpoint
+        Phase #3: Create source and target endpoint
         https://docs.aws.amazon.com/cdk/api/v1/python/aws_cdk.aws_dms/CfnEndpoint.html
         """
         # Supported Sources for data migration - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Introduction.Sources.html
         # Supported Targets for data migration - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Introduction.Targets.html
 
-        
+
         source_endpoint = dms.CfnEndpoint(self, "CDKSourceEndpoint",
         endpoint_type="source", #EndpointType
         engine_name="aurora-postgresql", #engineName; engine_name = source_endpoint
@@ -74,6 +101,20 @@ class DmsCdkSetupStack(Stack):
         )
 
         """
-        Phase #3: Create DMS replication instance and DMS task
+        Phase #4: Create DMS replication instance and DMS task
+        
         """
+        tmp = []
+        for sub in vpc.private_subnets:
+            tmp.append(sub.subnet_id)
 
+        rep_sub = dms.CfnReplicationSubnetGroup(self, "rep_sub",
+            replication_subnet_group_description="desc rep_sub",
+            subnet_ids=tmp
+        )
+
+        replication_instance = dms.CfnReplicationInstance(self, "rep-instance",
+            replication_instance_class="dms.t3.small",
+            replication_subnet_group_identifier=rep_sub.ref,
+            publicly_accessible=False
+        )
