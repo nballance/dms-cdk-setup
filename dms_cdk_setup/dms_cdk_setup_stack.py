@@ -1,3 +1,4 @@
+from distutils import core
 from aws_cdk import (
     # Duration,
     Stack,
@@ -5,7 +6,9 @@ from aws_cdk import (
     aws_ec2 as ec2,
     aws_rds as rds,
     aws_s3 as s3,
+    RemovalPolicy,
 )
+
 from constructs import Construct
 
 class DmsCdkSetupStack(Stack):
@@ -78,8 +81,8 @@ class DmsCdkSetupStack(Stack):
 
         # S3 BUCKET
         # Valid for: Source and Target
-        # TODO: add randomizer to bucket name
-        bucket = s3.Bucket(self, "myspecialbucket-2022-asfdkhjsdwerbn")
+        bucket = s3.Bucket(self, "dms-cdk-setup")
+        bucket.apply_removal_policy(RemovalPolicy.DESTROY)
 
 
         """
