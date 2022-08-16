@@ -15,6 +15,10 @@ class DmsCdkSetupStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # TODO: Create a README with format similar to - https://github.com/aws-samples/dms-cdk
+
+
         ######################################################
         # Set the source engine, e.g.                        #
         # source_engine = 'aurora-postgresql'                #
@@ -25,13 +29,15 @@ class DmsCdkSetupStack(Stack):
         source_engine='aurora-postgresql'
         # source_password='replaceme123' #TODO: It is not best practice to have password in CDK, can manually retrieve from secrets manager
         source_username='syscdk'
-        # target_engine = 'kafka'
+        target_engine = 'aurora-postgresql'
+        target_username=source_username
 
         """
         Phase #1: Create VPC and Security Groups
-        Phase #2: Provision source and target resources
-        Phase #3: Create source and target endpoint
-        Phase #4: Create DMS replication instance and DMS task
+        Phase #2: Provision source
+        Phase #3: Provision target
+        Phase #4: Create source and target endpoint
+        Phase #5: Create DMS replication instance and DMS task
         """
        
         """
@@ -61,8 +67,8 @@ class DmsCdkSetupStack(Stack):
         #    
 
         """
-        Phase #2: Provision source and target resources
-        This will be the bulk of the code. Need to provision infrastructure based on inputs. Will make check if it is valid source/target EP here.
+        Phase #2: Provision source - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Source.html
+        This will be the bulk of the code. Need to provision infrastructure based on inputs. Will make check if it is valid source EP here.
         """
 
         # RDS CLUSTER: aurora-postgresql and aurora-mysql - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/CfnDBCluster.html
@@ -75,7 +81,7 @@ class DmsCdkSetupStack(Stack):
             if(source_engine == 'aurora-mysql'):
                 set_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
         
-            cluster = rds.DatabaseCluster(self, "Cluster",
+            source_cluster = rds.DatabaseCluster(self, "Cluster",
                 engine=set_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
                 credentials=rds.Credentials.from_generated_secret(source_username),  # Optional - will default to 'admin' username and generated password
                 instances=1,
@@ -90,58 +96,119 @@ class DmsCdkSetupStack(Stack):
                 )
             )
             # Set the source object details
-            source = cluster
+            source = source_cluster
+        
+        # TODO: DocumentDB Cluster - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_docdb/README.html
+        # elif(source_engine == 'documentdb'): 
+
 
         # RDS INSTANCE: postgres, mysql, ... ,  - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/CfnDBInstance.html
         # TODO: support all valid RDS instance options
-        if(source_engine == 'postgres' or source_engine == 'mysql'):
+        # mariadb mysql oracle-ee oracle-se2 oracle-se1 oracle-se postgres sqlserver-ee sqlserver-se sqlserver-ex sqlserver-web
+        elif(source_engine == 'postgres' or source_engine == 'mysql'):
             if(source_engine == 'postgres'):
-                set_engine=rds.DatabaseInstanceEngine.POSTGRES
+                set_engine=rds.DatabaseInstanceEngine.POSTGRES # Default PostgreSQL engine version
             elif(source_engine == 'mysql'):
-                set_engine=rds.DatabaseInstanceEngine.MYSQL
+                set_engine=rds.DatabaseInstanceEngine.MYSQL # Default MySQL engine version
             
-            instance = rds.DatabaseInstance(self, "Instance",
+            source_instance = rds.DatabaseInstance(self, "Instance",
                 engine=set_engine
             )
+            source=source_instance
 
 
         # S3 BUCKET
-        # Valid for: Source and Target
-        bucket = s3.Bucket(self, "dms-cdk-setup")
-        bucket.apply_removal_policy(RemovalPolicy.DESTROY)
+        elif(source_engine == 's3'):
+            source_bucket = s3.Bucket(self, "dms-cdk-setup")
+            source_bucket.apply_removal_policy(RemovalPolicy.DESTROY)
+            source=source_bucket
+        
+        """
+        Phase #3: Provision target - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Target.html
+        This will be the bulk of the code. Need to provision infrastructure based on inputs. Will make check if it is valid target EP here.
+        """
+        # TODO: aurora-postgresql or aurora-mysql
+        if(target_engine == 'aurora-postgresql' or target_engine == 'aurora-mysql'):
+            target='aurora'
 
+        # TODO: DocumentDB
+        elif(target_engine == 'documentdb'):
+            target='documentdb'
+
+        # TODO: support all valid RDS instance options
+        # mariadb mysql oracle-ee oracle-se2 oracle-se1 oracle-se postgres sqlserver-ee sqlserver-se sqlserver-ex sqlserver-web
+        elif(target_engine == 'postgres'):
+            target='postgres'
+
+        # TODO: S3
+        # TODO: Redshift
+        # TODO: DynamoDB
+        # TODO: Kafka
+        # TODO: Kinesis
+        # TODO: DynamoDB
+        # TODO: Neptune
+        # TODO: Redis
+        # TODO: OpenSearch
+        # TODO: Babelfish
 
         """
-        Phase #3: Create source and target endpoint
+        Phase #4: Create source and target endpoint
         https://docs.aws.amazon.com/cdk/api/v1/python/aws_cdk.aws_dms/CfnEndpoint.html
         """
         # Supported Sources for data migration - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Introduction.Sources.html
         # Supported Targets for data migration - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Introduction.Targets.html
 
-
+        # TODO: source endpoint
         # Checks if cluster type
         if(type(source) == rds.DatabaseCluster):
             set_engine_name=source.engine.engine_type
-            set_server_name=cluster.cluster_endpoint.hostname
-            set_port=cluster.cluster_endpoint.port
+            set_server_name=source_cluster.cluster_endpoint.hostname
+            set_port=source_cluster.cluster_endpoint.port
         # if(type(source) == rds.Database)
-        # if(type(source) == kafka)
+        # if(type(source) == docdb.DatabaseCluster)
 
         # Currently using cluster, will need to use generic object.
         source_endpoint = dms.CfnEndpoint(source, "CDKSourceEndpoint",
             endpoint_type="source", #EndpointType
             engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
-            database_name="postgres", #databaseName
+            # database_name="postgres", 
             password="password", #need to retrieve from secrets manager
-            username="username", #need to retrieve from secrets manager
+            username=source_username, #need to retrieve from secrets manager
             # TODO: Currently server_name is for Aurora cluster only
             # server_name=cluster.cluster_endpoint.hostname,
             server_name=set_server_name,
             port=set_port,
         )
 
+
+
+        # TODO: Target endpoint -- currently reusing source info
+        # Checks if cluster type
+        if(type(target) == rds.DatabaseCluster):
+            print('target is Aurora')
+            # TODO: add target info
+            # set_engine_name=target.engine.engine_type
+            # set_server_name=target_cluster.cluster_endpoint.hostname
+            # set_port=target_cluster.cluster_endpoint.port
+        # if(type(source) == rds.Database)
+        # if(type(source) == docdb.DatabaseCluster)
+
+        # Currently using cluster, will need to use generic object.
+        target_endpoint = dms.CfnEndpoint(source, "CDKTargetEndpoint",
+            endpoint_type="target", #EndpointType
+            engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
+            # database_name="postgres", 
+            password="password", #need to retrieve from secrets manager
+            username=target_username, #need to retrieve from secrets manager
+            # TODO: Currently server_name is for Aurora cluster only
+            # server_name=cluster.cluster_endpoint.hostname,
+            server_name=set_server_name,
+            port=set_port,
+        )
+
+
         """
-        Phase #4: Create DMS replication instance and DMS task
+        Phase #5: Create DMS replication instance and DMS task
         
         """
         tmp = []
@@ -158,3 +225,28 @@ class DmsCdkSetupStack(Stack):
             replication_subnet_group_identifier=rep_sub.ref,
             publicly_accessible=False
         )
+
+        # TODO: Create Replication Task - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_dms/CfnReplicationTask.html
+        # Need to wait on source, target, replication instance, test endpoints.
+        replication_task = dms.CfnReplicationTask(self, "MyCfnReplicationTask",
+            migration_type="full-load", # full-load | cdc | full-load-and-cdc
+            replication_instance_arn="replicationInstanceArn", # replication_instance
+            source_endpoint_arn="sourceEndpointArn", # source endpoint
+            target_endpoint_arn="targetEndpointArn", # target endpoint
+            table_mappings="tableMappings",
+            # the properties below are optional
+            # cdc_start_position="cdcStartPosition",
+            # cdc_start_time=123,
+            # cdc_stop_position="cdcStopPosition",
+            # replication_task_identifier="replicationTaskIdentifier",
+            # replication_task_settings="replicationTaskSettings",
+            resource_identifier="CDKDMSTask",
+            # tags=[CfnTag(
+            #     key="key",
+            #     value="value"
+            # )],
+            # task_data="taskData"
+        )
+        replication_task.add_depends_on(replication_instance)
+        replication_task.add_depends_on(source_endpoint)
+        replication_task.add_depends_on(target_endpoint)
