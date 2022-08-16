@@ -8,6 +8,7 @@ from aws_cdk import (
     aws_s3 as s3,
     RemovalPolicy,
 )
+import json
 
 from constructs import Construct
 
@@ -77,14 +78,14 @@ class DmsCdkSetupStack(Stack):
         # TODO: setup custom parameter groups for CDC replication
         if(source_engine == 'aurora-postgresql' or source_engine == 'aurora-mysql'):
             if(source_engine == 'aurora-postgresql'):
-                set_engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_12_11) # Default Aurora PostgreSQL engine version is 12.11
+                set_source_engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_12_11) # Default Aurora PostgreSQL engine version is 12.11
             if(source_engine == 'aurora-mysql'):
-                set_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
+                set_source_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
         
-            source_cluster = rds.DatabaseCluster(self, "Cluster",
-                engine=set_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
+            source_cluster = rds.DatabaseCluster(self, "Source Cluster",
+                engine=set_source_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
                 credentials=rds.Credentials.from_generated_secret(source_username),  # Optional - will default to 'admin' username and generated password
-                instances=1,
+                instances=1, #TODO: comment out if no instances deployed, need to find out how to deploy only writer
                 # credentials=rds.Credentials.from_password(source_username, source_password), #TODO: It is not recommended to expose password in CDK, manual process to view secrets manager created and use auto-generated value
                 instance_props=rds.InstanceProps(
                     # optional , defaults to t3.medium
@@ -95,6 +96,7 @@ class DmsCdkSetupStack(Stack):
                     vpc=vpc
                 )
             )
+            # TODO: Print secret password value for easy access
             # Set the source object details
             source = source_cluster
         
@@ -107,12 +109,12 @@ class DmsCdkSetupStack(Stack):
         # mariadb mysql oracle-ee oracle-se2 oracle-se1 oracle-se postgres sqlserver-ee sqlserver-se sqlserver-ex sqlserver-web
         elif(source_engine == 'postgres' or source_engine == 'mysql'):
             if(source_engine == 'postgres'):
-                set_engine=rds.DatabaseInstanceEngine.POSTGRES # Default PostgreSQL engine version
+                set_target_engine=rds.DatabaseInstanceEngine.POSTGRES # Default PostgreSQL engine version
             elif(source_engine == 'mysql'):
-                set_engine=rds.DatabaseInstanceEngine.MYSQL # Default MySQL engine version
+                set_target_engine=rds.DatabaseInstanceEngine.MYSQL # Default MySQL engine version
             
             source_instance = rds.DatabaseInstance(self, "Instance",
-                engine=set_engine
+                engine=set_target_engine
             )
             source=source_instance
 
@@ -129,16 +131,36 @@ class DmsCdkSetupStack(Stack):
         """
         # TODO: aurora-postgresql or aurora-mysql
         if(target_engine == 'aurora-postgresql' or target_engine == 'aurora-mysql'):
-            target='aurora'
+            if(target_engine == 'aurora-postgresql'):
+                set_target_engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_12_11) # Default Aurora PostgreSQL engine version is 12.11
+            if(target_engine == 'aurora-mysql'):
+                set_target_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
+            
+            target_cluster = rds.DatabaseCluster(self, "Target Cluster",
+                engine=set_target_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
+                credentials=rds.Credentials.from_generated_secret(target_username),  # Optional - will default to 'admin' username and generated password
+                instances=1, #TODO: comment out if no instances deployed, need to find out how to deploy only writer
+                # credentials=rds.Credentials.from_password(source_username, source_password), #TODO: It is not recommended to expose password in CDK, manual process to view secrets manager created and use auto-generated value
+                instance_props=rds.InstanceProps(
+                    # optional , defaults to t3.medium
+                    # instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL),
+                    vpc_subnets=ec2.SubnetSelection(
+                        subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
+                    ),
+                    vpc=vpc
+                )
+            )
+            target = target_cluster
+
 
         # TODO: DocumentDB
-        elif(target_engine == 'documentdb'):
-            target='documentdb'
+        # elif(target_engine == 'documentdb'):
+        #     target='documentdb'
 
         # TODO: support all valid RDS instance options
         # mariadb mysql oracle-ee oracle-se2 oracle-se1 oracle-se postgres sqlserver-ee sqlserver-se sqlserver-ex sqlserver-web
-        elif(target_engine == 'postgres'):
-            target='postgres'
+        # elif(target_engine == 'postgres'):
+        #     target='postgres'
 
         # TODO: S3
         # TODO: Redshift
@@ -170,8 +192,8 @@ class DmsCdkSetupStack(Stack):
         # Currently using cluster, will need to use generic object.
         source_endpoint = dms.CfnEndpoint(source, "CDKSourceEndpoint",
             endpoint_type="source", #EndpointType
-            engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
-            # database_name="postgres", 
+            engine_name=source.engine.engine_type, #engineName; engine_name = source_endpoint # cluster.engine
+            database_name="postgres", 
             password="password", #need to retrieve from secrets manager
             username=source_username, #need to retrieve from secrets manager
             # TODO: Currently server_name is for Aurora cluster only
@@ -179,25 +201,26 @@ class DmsCdkSetupStack(Stack):
             server_name=set_server_name,
             port=set_port,
         )
+        set_source_endpoint_arn = source_endpoint.ref
+        # TODO: Need to TestConnection - https://stackoverflow.com/questions/50512065/unable-to-test-aws-dms-end-points-in-cloud-fromation-template
+        # Option is to deploy a lambda and execute code to test connection
 
-
-
-        # TODO: Target endpoint -- currently reusing source info
+        # TODO: Target endpoint 
         # Checks if cluster type
         if(type(target) == rds.DatabaseCluster):
             print('target is Aurora')
             # TODO: add target info
-            # set_engine_name=target.engine.engine_type
-            # set_server_name=target_cluster.cluster_endpoint.hostname
-            # set_port=target_cluster.cluster_endpoint.port
+            set_engine_name=target.engine.engine_type
+            set_server_name=target_cluster.cluster_endpoint.hostname
+            set_port=target_cluster.cluster_endpoint.port
         # if(type(source) == rds.Database)
         # if(type(source) == docdb.DatabaseCluster)
-
+        
         # Currently using cluster, will need to use generic object.
         target_endpoint = dms.CfnEndpoint(source, "CDKTargetEndpoint",
             endpoint_type="target", #EndpointType
             engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
-            # database_name="postgres", 
+            database_name="postgres", 
             password="password", #need to retrieve from secrets manager
             username=target_username, #need to retrieve from secrets manager
             # TODO: Currently server_name is for Aurora cluster only
@@ -205,7 +228,8 @@ class DmsCdkSetupStack(Stack):
             server_name=set_server_name,
             port=set_port,
         )
-
+        set_target_endpoint_arn = target_endpoint.ref
+        
 
         """
         Phase #5: Create DMS replication instance and DMS task
@@ -225,15 +249,22 @@ class DmsCdkSetupStack(Stack):
             replication_subnet_group_identifier=rep_sub.ref,
             publicly_accessible=False
         )
+        set_replication_instance_arn = replication_instance.ref
+
+
+            
+
 
         # TODO: Create Replication Task - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_dms/CfnReplicationTask.html
         # Need to wait on source, target, replication instance, test endpoints.
         replication_task = dms.CfnReplicationTask(self, "MyCfnReplicationTask",
             migration_type="full-load", # full-load | cdc | full-load-and-cdc
-            replication_instance_arn="replicationInstanceArn", # replication_instance
-            source_endpoint_arn="sourceEndpointArn", # source endpoint
-            target_endpoint_arn="targetEndpointArn", # target endpoint
-            table_mappings="tableMappings",
+            replication_instance_arn=set_replication_instance_arn, # replication_instance
+            source_endpoint_arn=set_source_endpoint_arn, # source endpoint
+            target_endpoint_arn=set_target_endpoint_arn, # target endpoint
+            table_mappings= json.dumps({"rules":[{"rule-type":"selection","rule-id":"1","rule-name":"1","object-locator":{"schema-name":"%","table-name":"%"},"rule-action":"include"}]}),
+
+
             # the properties below are optional
             # cdc_start_position="cdcStartPosition",
             # cdc_start_time=123,
@@ -250,3 +281,4 @@ class DmsCdkSetupStack(Stack):
         replication_task.add_depends_on(replication_instance)
         replication_task.add_depends_on(source_endpoint)
         replication_task.add_depends_on(target_endpoint)
+        
