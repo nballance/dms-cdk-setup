@@ -15,11 +15,16 @@ class DmsCdkSetupStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-
-        # Set the source engine 
-        source_engine = 'aurora-postgresql'
-
-        # Set the target engine
+        ######################################################
+        # Set the source engine, e.g.                        #
+        # source_engine = 'aurora-postgresql'                #
+        #                                                    #
+        # Set the target engine, e.g.                        #
+        # target_engine = 'kafka'                            #
+        ######################################################
+        source_engine='aurora-postgresql'
+        # source_password='replaceme123' #TODO: It is not best practice to have password in CDK, can manually retrieve from secrets manager
+        source_username='syscdk'
         # target_engine = 'kafka'
 
         """
@@ -28,11 +33,7 @@ class DmsCdkSetupStack(Stack):
         Phase #3: Create source and target endpoint
         Phase #4: Create DMS replication instance and DMS task
         """
-
-
-
-
-        
+       
         """
         Phase #1: Create VPC and Security Groups
         Create with best practices in mind for public and private subnets
@@ -64,19 +65,21 @@ class DmsCdkSetupStack(Stack):
         This will be the bulk of the code. Need to provision infrastructure based on inputs. Will make check if it is valid source/target EP here.
         """
 
-        # RDS CLUSTER: Aurora PostgreSQL/MySQL 
+        # RDS CLUSTER: aurora-postgresql and aurora-mysql - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/CfnDBCluster.html
         # Valid for: Source and Target
-        # TODO: get rid of Secrets Manager and manually use password+username
+        # TODO: get rid of Secrets Manager and manually use password+username, may need to create DatabaseInstance - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/DatabaseInstance.html
         # TODO: setup custom parameter groups for CDC replication
         if(source_engine == 'aurora-postgresql' or source_engine == 'aurora-mysql'):
             if(source_engine == 'aurora-postgresql'):
-                set_engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_12_11)
+                set_engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_12_11) # Default Aurora PostgreSQL engine version is 12.11
             if(source_engine == 'aurora-mysql'):
-                set_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0)
+                set_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
         
-            cluster = rds.DatabaseCluster(self, "Database",
+            cluster = rds.DatabaseCluster(self, "Cluster",
                 engine=set_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
-                credentials=rds.Credentials.from_generated_secret("username"),  # Optional - will default to 'admin' username and generated password
+                credentials=rds.Credentials.from_generated_secret(source_username),  # Optional - will default to 'admin' username and generated password
+                instances=1,
+                # credentials=rds.Credentials.from_password(source_username, source_password), #TODO: It is not recommended to expose password in CDK, manual process to view secrets manager created and use auto-generated value
                 instance_props=rds.InstanceProps(
                     # optional , defaults to t3.medium
                     # instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL),
@@ -88,6 +91,18 @@ class DmsCdkSetupStack(Stack):
             )
             # Set the source object details
             source = cluster
+
+        # RDS INSTANCE: postgres, mysql, ... ,  - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/CfnDBInstance.html
+        # TODO: support all valid RDS instance options
+        if(source_engine == 'postgres' or source_engine == 'mysql'):
+            if(source_engine == 'postgres'):
+                set_engine=rds.DatabaseInstanceEngine.POSTGRES
+            elif(source_engine == 'mysql'):
+                set_engine=rds.DatabaseInstanceEngine.MYSQL
+            
+            instance = rds.DatabaseInstance(self, "Instance",
+                engine=set_engine
+            )
 
 
         # S3 BUCKET
