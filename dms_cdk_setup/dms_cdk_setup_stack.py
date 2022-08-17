@@ -62,6 +62,27 @@ class DmsCdkSetupStack(Stack):
             ]  
         )
 
+
+        
+
+        # TODO: Add self-referencing security group for all AWS resources to use in their inbound rule
+        # TODO: Difference between ISecurityGroup and SecurityGroup
+        self_referencing_security_group = ec2.SecurityGroup(self, 'SelfReferencingRule',
+            vpc=vpc,
+            description='Self-referencing security group',
+            allow_all_outbound=True
+        )
+        self_referencing_security_group.add_ingress_rule(self_referencing_security_group, ec2.Port.all_tcp(), "Self-referencing rule")
+        self_referencing_security_group.security_group_id
+
+        # CANNOT INSTANTIATE A PROTOCOL
+        # self_referencing_security_group = ec2.ISecurityGroup(self, 'SelfReferencingRule',
+        #     vpc=vpc,
+        #     description='Self-referencing security group',
+        #     allow_all_outbound=True
+        # )
+        # self_referencing_security_group.add_ingress_rule(self_referencing_security_group, ec2.Port.all_tcp(), "Self-referencing rule")
+        # self_referencing_security_group.security_group_id
         # vpc = ec2.Vpc(self, "DMSVPC",
         #     cidr="10.0.0.0/16"
         # )     
@@ -86,19 +107,22 @@ class DmsCdkSetupStack(Stack):
                 engine=set_source_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
                 credentials=rds.Credentials.from_generated_secret(source_username),  # Optional - will default to 'admin' username and generated password
                 instances=1, #TODO: comment out if no instances deployed, need to find out how to deploy only writer
-                # credentials=rds.Credentials.from_password(source_username, source_password), #TODO: It is not recommended to expose password in CDK, manual process to view secrets manager created and use auto-generated value
                 instance_props=rds.InstanceProps(
                     # optional , defaults to t3.medium
                     # instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL),
+                    security_groups=[self_referencing_security_group],
                     vpc_subnets=ec2.SubnetSelection(
                         subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
                     ),
                     vpc=vpc
                 )
+                # TODO: RDS INSTANCE SECURITY GROUP DOES NOT ALLOW ANY INBOUND RULES
             )
             # TODO: Print secret password value for easy access
             # Set the source object details
             source = source_cluster
+            source_password=source.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
+            print('Source password ' + source_password) # Print this for user to see
         
         # TODO: DocumentDB Cluster - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_docdb/README.html
         # elif(source_engine == 'documentdb'): 
@@ -144,13 +168,16 @@ class DmsCdkSetupStack(Stack):
                 instance_props=rds.InstanceProps(
                     # optional , defaults to t3.medium
                     # instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL),
+                    security_groups=[self_referencing_security_group],
                     vpc_subnets=ec2.SubnetSelection(
                         subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
                     ),
                     vpc=vpc
                 )
             )
-            target = target_cluster
+            target=target_cluster
+            target_password=target.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
+            print('Target password ' + target_password) # Print this for user to see
 
 
         # TODO: DocumentDB
@@ -183,23 +210,23 @@ class DmsCdkSetupStack(Stack):
         # TODO: source endpoint
         # Checks if cluster type
         if(type(source) == rds.DatabaseCluster):
-            set_engine_name=source.engine.engine_type
-            set_server_name=source_cluster.cluster_endpoint.hostname
-            set_port=source_cluster.cluster_endpoint.port
+            set_source_engine_name=source.engine.engine_type
+            set_source_server_name=source_cluster.cluster_endpoint.hostname
+            set_source_port=source_cluster.cluster_endpoint.port
         # if(type(source) == rds.Database)
         # if(type(source) == docdb.DatabaseCluster)
 
         # Currently using cluster, will need to use generic object.
         source_endpoint = dms.CfnEndpoint(source, "CDKSourceEndpoint",
             endpoint_type="source", #EndpointType
-            engine_name=source.engine.engine_type, #engineName; engine_name = source_endpoint # cluster.engine
+            engine_name=set_source_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
             database_name="postgres", 
-            password="password", #need to retrieve from secrets manager
+            password=source_password, #need to retrieve from secrets manager
             username=source_username, #need to retrieve from secrets manager
             # TODO: Currently server_name is for Aurora cluster only
             # server_name=cluster.cluster_endpoint.hostname,
-            server_name=set_server_name,
-            port=set_port,
+            server_name=set_source_server_name,
+            port=set_source_port,
         )
         set_source_endpoint_arn = source_endpoint.ref
         # TODO: Need to TestConnection - https://stackoverflow.com/questions/50512065/unable-to-test-aws-dms-end-points-in-cloud-fromation-template
@@ -210,23 +237,23 @@ class DmsCdkSetupStack(Stack):
         if(type(target) == rds.DatabaseCluster):
             print('target is Aurora')
             # TODO: add target info
-            set_engine_name=target.engine.engine_type
-            set_server_name=target_cluster.cluster_endpoint.hostname
-            set_port=target_cluster.cluster_endpoint.port
+            set_target_engine_name=target.engine.engine_type
+            set_target_server_name=target_cluster.cluster_endpoint.hostname
+            set_target_port=target_cluster.cluster_endpoint.port
         # if(type(source) == rds.Database)
         # if(type(source) == docdb.DatabaseCluster)
         
         # Currently using cluster, will need to use generic object.
         target_endpoint = dms.CfnEndpoint(source, "CDKTargetEndpoint",
             endpoint_type="target", #EndpointType
-            engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
+            engine_name=set_target_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
             database_name="postgres", 
-            password="password", #need to retrieve from secrets manager
+            password=target_password, #need to retrieve from secrets manager
             username=target_username, #need to retrieve from secrets manager
             # TODO: Currently server_name is for Aurora cluster only
             # server_name=cluster.cluster_endpoint.hostname,
-            server_name=set_server_name,
-            port=set_port,
+            server_name=set_target_server_name,
+            port=set_target_port,
         )
         set_target_endpoint_arn = target_endpoint.ref
         
@@ -247,13 +274,14 @@ class DmsCdkSetupStack(Stack):
         replication_instance = dms.CfnReplicationInstance(self, "rep-instance",
             replication_instance_class="dms.t3.small",
             replication_subnet_group_identifier=rep_sub.ref,
-            publicly_accessible=False
+            publicly_accessible=False,
+            vpc_security_group_ids=[self_referencing_security_group.security_group_id] # Add rule 
         )
         set_replication_instance_arn = replication_instance.ref
 
 
-            
-
+        # TODO: Need to fix the host name
+        # 00022820: 2022-08-17T02:23:39 [SERVER          ]E:  RetCode: SQL_ERROR  SqlState: 08001 NativeError: 101 Message: [unixODBC]could not translate host name "dmscdksetupstack-sourcecluster758a338f-uv6c5tipfzkc.cluster-ckiu1mpiy1mp.us-east-1.rds.amazonaws.com" to address: Name or service not known [1022502]  (ar_odbc_conn.c:579)
 
         # TODO: Create Replication Task - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_dms/CfnReplicationTask.html
         # Need to wait on source, target, replication instance, test endpoints.
