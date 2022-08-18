@@ -45,6 +45,7 @@ class DmsCdkSetupStack(Stack):
         Phase #1: Create VPC and Security Groups
         Create with best practices in mind for public and private subnets
         """
+        # TODO: Verify if DNS host names enabled
         vpc = ec2.Vpc(self, 'DMSVPC', 
             cidr="10.0.0.0/16",
             max_azs=3,
@@ -75,18 +76,6 @@ class DmsCdkSetupStack(Stack):
         self_referencing_security_group.add_ingress_rule(self_referencing_security_group, ec2.Port.all_tcp(), "Self-referencing rule")
         self_referencing_security_group.security_group_id
 
-        # CANNOT INSTANTIATE A PROTOCOL
-        # self_referencing_security_group = ec2.ISecurityGroup(self, 'SelfReferencingRule',
-        #     vpc=vpc,
-        #     description='Self-referencing security group',
-        #     allow_all_outbound=True
-        # )
-        # self_referencing_security_group.add_ingress_rule(self_referencing_security_group, ec2.Port.all_tcp(), "Self-referencing rule")
-        # self_referencing_security_group.security_group_id
-        # vpc = ec2.Vpc(self, "DMSVPC",
-        #     cidr="10.0.0.0/16"
-        # )     
-        #    
 
         """
         Phase #2: Provision source - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Source.html
@@ -107,6 +96,7 @@ class DmsCdkSetupStack(Stack):
                 engine=set_source_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
                 credentials=rds.Credentials.from_generated_secret(source_username),  # Optional - will default to 'admin' username and generated password
                 instances=1, #TODO: comment out if no instances deployed, need to find out how to deploy only writer
+                
                 instance_props=rds.InstanceProps(
                     # optional , defaults to t3.medium
                     # instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL),
@@ -118,12 +108,14 @@ class DmsCdkSetupStack(Stack):
                 )
                 # TODO: RDS INSTANCE SECURITY GROUP DOES NOT ALLOW ANY INBOUND RULES
             )
+            source_cluster.apply_removal_policy(RemovalPolicy.DESTROY)
+
             # TODO: Print secret password value for easy access
             # Set the source object details
             source = source_cluster
             source_password=source.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
             print('Source password ' + source_password) # Print this for user to see
-        
+
         # TODO: DocumentDB Cluster - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_docdb/README.html
         # elif(source_engine == 'documentdb'): 
 
@@ -175,8 +167,12 @@ class DmsCdkSetupStack(Stack):
                     vpc=vpc
                 )
             )
+            target_cluster.apply_removal_policy(RemovalPolicy.DESTROY)
             target=target_cluster
             target_password=target.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
+            target_writer_endpoint=target.instance_endpoints[0]
+            # target_writer=target.
+    
             print('Target password ' + target_password) # Print this for user to see
 
 
@@ -229,7 +225,8 @@ class DmsCdkSetupStack(Stack):
             port=set_source_port,
         )
         set_source_endpoint_arn = source_endpoint.ref
-        # TODO: Need to TestConnection - https://stackoverflow.com/questions/50512065/unable-to-test-aws-dms-end-points-in-cloud-fromation-template
+        source_endpoint.add_depends_on(source_cluster.node.children[4])
+        # TODO: Wait condition on cluster writer instance rather than cluster
         # Option is to deploy a lambda and execute code to test connection
 
         # TODO: Target endpoint 
@@ -244,7 +241,7 @@ class DmsCdkSetupStack(Stack):
         # if(type(source) == docdb.DatabaseCluster)
         
         # Currently using cluster, will need to use generic object.
-        target_endpoint = dms.CfnEndpoint(source, "CDKTargetEndpoint",
+        target_endpoint = dms.CfnEndpoint(target_cluster.node.children[4], "CDKTargetEndpoint",  # This should be referencing the 4th position in the children array which maps to a CFN instance
             endpoint_type="target", #EndpointType
             engine_name=set_target_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
             database_name="postgres", 
@@ -256,7 +253,7 @@ class DmsCdkSetupStack(Stack):
             port=set_target_port,
         )
         set_target_endpoint_arn = target_endpoint.ref
-        
+        target_endpoint.add_depends_on(target_cluster.node.children[4])        
 
         """
         Phase #5: Create DMS replication instance and DMS task
