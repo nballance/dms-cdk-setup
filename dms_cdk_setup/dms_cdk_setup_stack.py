@@ -46,7 +46,7 @@ class DmsCdkSetupStack(Stack):
         Create with best practices in mind for public and private subnets
         """
         # TODO: Verify if DNS host names enabled
-        vpc = ec2.Vpc(self, 'DMSVPC', 
+        vpc = ec2.Vpc(self, 'CDKDMSVPC', 
             cidr="10.0.0.0/16",
             max_azs=3,
             subnet_configuration=[
@@ -68,7 +68,7 @@ class DmsCdkSetupStack(Stack):
 
         # TODO: Add self-referencing security group for all AWS resources to use in their inbound rule
         # TODO: Difference between ISecurityGroup and SecurityGroup
-        self_referencing_security_group = ec2.SecurityGroup(self, 'SelfReferencingRule',
+        self_referencing_security_group = ec2.SecurityGroup(self, 'CDKSelfReferencingRule',
             vpc=vpc,
             description='Self-referencing security group',
             allow_all_outbound=True
@@ -92,12 +92,13 @@ class DmsCdkSetupStack(Stack):
             if(source_engine == 'aurora-mysql'):
                 set_source_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
         
-            source_cluster = rds.DatabaseCluster(self, "Source Cluster",
+            source_cluster = rds.DatabaseCluster(self, "CDKSourceCluster",
                 engine=set_source_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
                 credentials=rds.Credentials.from_generated_secret(source_username),  # Optional - will default to 'admin' username and generated password
                 instances=1, #TODO: comment out if no instances deployed, need to find out how to deploy only writer
-                
+                cluster_identifier="cdk-source",
                 instance_props=rds.InstanceProps(
+                    # TODO: Make this publicly accessible and launch in public subnet
                     # optional , defaults to t3.medium
                     # instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL),
                     security_groups=[self_referencing_security_group],
@@ -113,8 +114,13 @@ class DmsCdkSetupStack(Stack):
             # TODO: Print secret password value for easy access
             # Set the source object details
             source = source_cluster
+            for child in source.node.children:
+                if(type(child) == rds.CfnDBInstance):  # For nwo we filter by type DB Instance, since we deploy one instance this should be the writer.
+                    source_writer=child
+
+            # source_writer=source_cluster.node.children[4]
             source_password=source.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
-            print('Source password ' + source_password) # Print this for user to see
+            # print('Source password ' + source_password) # Print this for user to see
 
         # TODO: DocumentDB Cluster - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_docdb/README.html
         # elif(source_engine == 'documentdb'): 
@@ -152,11 +158,12 @@ class DmsCdkSetupStack(Stack):
             if(target_engine == 'aurora-mysql'):
                 set_target_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
             
-            target_cluster = rds.DatabaseCluster(self, "Target Cluster",
+            target_cluster = rds.DatabaseCluster(self, "CDKTargetCluster",
                 engine=set_target_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
                 credentials=rds.Credentials.from_generated_secret(target_username),  # Optional - will default to 'admin' username and generated password
                 instances=1, #TODO: comment out if no instances deployed, need to find out how to deploy only writer
                 # credentials=rds.Credentials.from_password(source_username, source_password), #TODO: It is not recommended to expose password in CDK, manual process to view secrets manager created and use auto-generated value
+                cluster_identifier="cdk-target",
                 instance_props=rds.InstanceProps(
                     # optional , defaults to t3.medium
                     # instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL),
@@ -170,11 +177,10 @@ class DmsCdkSetupStack(Stack):
             target_cluster.apply_removal_policy(RemovalPolicy.DESTROY)
             target=target_cluster
             target_password=target.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
-            target_writer_endpoint=target.instance_endpoints[0]
-            # target_writer=target.
-    
-            print('Target password ' + target_password) # Print this for user to see
 
+            for child in target.node.children:
+                if(type(child) == rds.CfnDBInstance):  # For nwo we filter by type DB Instance, since we deploy one instance this should be the writer.
+                    target_writer=child
 
         # TODO: DocumentDB
         # elif(target_engine == 'documentdb'):
@@ -219,15 +225,12 @@ class DmsCdkSetupStack(Stack):
             database_name="postgres", 
             password=source_password, #need to retrieve from secrets manager
             username=source_username, #need to retrieve from secrets manager
-            # TODO: Currently server_name is for Aurora cluster only
-            # server_name=cluster.cluster_endpoint.hostname,
             server_name=set_source_server_name,
             port=set_source_port,
+            endpoint_identifier="cdk-source-endpoint"
         )
         set_source_endpoint_arn = source_endpoint.ref
-        source_endpoint.add_depends_on(source_cluster.node.children[4])
-        # TODO: Wait condition on cluster writer instance rather than cluster
-        # Option is to deploy a lambda and execute code to test connection
+        source_endpoint.add_depends_on(source_writer) # need to wait on writer instance host name to resolve
 
         # TODO: Target endpoint 
         # Checks if cluster type
@@ -237,23 +240,20 @@ class DmsCdkSetupStack(Stack):
             set_target_engine_name=target.engine.engine_type
             set_target_server_name=target_cluster.cluster_endpoint.hostname
             set_target_port=target_cluster.cluster_endpoint.port
-        # if(type(source) == rds.Database)
-        # if(type(source) == docdb.DatabaseCluster)
         
         # Currently using cluster, will need to use generic object.
-        target_endpoint = dms.CfnEndpoint(target_cluster.node.children[4], "CDKTargetEndpoint",  # This should be referencing the 4th position in the children array which maps to a CFN instance
+        target_endpoint = dms.CfnEndpoint(target, "CDKTargetEndpoint",  
             endpoint_type="target", #EndpointType
             engine_name=set_target_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
             database_name="postgres", 
             password=target_password, #need to retrieve from secrets manager
             username=target_username, #need to retrieve from secrets manager
-            # TODO: Currently server_name is for Aurora cluster only
-            # server_name=cluster.cluster_endpoint.hostname,
             server_name=set_target_server_name,
             port=set_target_port,
+            endpoint_identifier="cdk-target-endpoint"
         )
         set_target_endpoint_arn = target_endpoint.ref
-        target_endpoint.add_depends_on(target_cluster.node.children[4])        
+        target_endpoint.add_depends_on(target_writer)        
 
         """
         Phase #5: Create DMS replication instance and DMS task
@@ -268,35 +268,30 @@ class DmsCdkSetupStack(Stack):
             subnet_ids=tmp
         )
 
-        replication_instance = dms.CfnReplicationInstance(self, "rep-instance",
+        replication_instance = dms.CfnReplicationInstance(self, "CDKReplicationInstance",
             replication_instance_class="dms.t3.small",
             replication_subnet_group_identifier=rep_sub.ref,
             publicly_accessible=False,
-            vpc_security_group_ids=[self_referencing_security_group.security_group_id] # Add rule 
+            vpc_security_group_ids=[self_referencing_security_group.security_group_id], # Add rule
+            replication_instance_identifier="cdk-replication-instance", 
         )
         set_replication_instance_arn = replication_instance.ref
 
-
-        # TODO: Need to fix the host name
-        # 00022820: 2022-08-17T02:23:39 [SERVER          ]E:  RetCode: SQL_ERROR  SqlState: 08001 NativeError: 101 Message: [unixODBC]could not translate host name "dmscdksetupstack-sourcecluster758a338f-uv6c5tipfzkc.cluster-ckiu1mpiy1mp.us-east-1.rds.amazonaws.com" to address: Name or service not known [1022502]  (ar_odbc_conn.c:579)
-
         # TODO: Create Replication Task - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_dms/CfnReplicationTask.html
         # Need to wait on source, target, replication instance, test endpoints.
-        replication_task = dms.CfnReplicationTask(self, "MyCfnReplicationTask",
+        replication_task = dms.CfnReplicationTask(self, "CDKReplicationTask",
             migration_type="full-load", # full-load | cdc | full-load-and-cdc
             replication_instance_arn=set_replication_instance_arn, # replication_instance
             source_endpoint_arn=set_source_endpoint_arn, # source endpoint
             target_endpoint_arn=set_target_endpoint_arn, # target endpoint
             table_mappings= json.dumps({"rules":[{"rule-type":"selection","rule-id":"1","rule-name":"1","object-locator":{"schema-name":"%","table-name":"%"},"rule-action":"include"}]}),
-
-
+            resource_identifier="cdk-replication-task",
             # the properties below are optional
             # cdc_start_position="cdcStartPosition",
             # cdc_start_time=123,
             # cdc_stop_position="cdcStopPosition",
             # replication_task_identifier="replicationTaskIdentifier",
             # replication_task_settings="replicationTaskSettings",
-            resource_identifier="CDKDMSTask",
             # tags=[CfnTag(
             #     key="key",
             #     value="value"
@@ -306,4 +301,3 @@ class DmsCdkSetupStack(Stack):
         replication_task.add_depends_on(replication_instance)
         replication_task.add_depends_on(source_endpoint)
         replication_task.add_depends_on(target_endpoint)
-        
