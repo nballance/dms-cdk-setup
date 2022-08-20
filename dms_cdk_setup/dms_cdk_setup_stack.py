@@ -12,6 +12,8 @@ import json
 
 from constructs import Construct
 
+from .vpc_setup import *
+
 class DmsCdkSetupStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
@@ -45,24 +47,31 @@ class DmsCdkSetupStack(Stack):
         Phase #1: Create VPC and Security Groups
         Create with best practices in mind for public and private subnets
         """
+        vpc=createVPC(self)
+        # vpc=VPCDefault(self, 'CDKDMSVPC')
         # TODO: Verify if DNS host names enabled
-        vpc = ec2.Vpc(self, 'CDKDMSVPC', 
-            cidr="10.0.0.0/16",
-            max_azs=3,
-            subnet_configuration=[
-                ec2.SubnetConfiguration(
-                    cidr_mask=24,
-                    name='public1',
-                    subnet_type=ec2.SubnetType.PUBLIC
-                ),
-                ec2.SubnetConfiguration(
-                    cidr_mask=24,
-                    name='private1',
-                    subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
-                )
-            ]  
-        )
+        # vpc = ec2.Vpc(self, 'CDKDMSVPC', 
+        #     cidr="10.0.0.0/16",
+        #     max_azs=3,
+        #     subnet_configuration=[
+        #         ec2.SubnetConfiguration(
+        #             cidr_mask=24,
+        #             name='public1',
+        #             subnet_type=ec2.SubnetType.PUBLIC
+        #         ),
+        #         ec2.SubnetConfiguration(
+        #             cidr_mask=24,
+        #             name='private1',
+        #             subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
+        #         )
+        #     ]  
+        # )
+        # print(vpc)
 
+# <class 'dms_cdk_setup.vpc_setup.VPCDefault'>
+# <dms_cdk_setup.vpc_setup.VPCDefault object at 0x00000205299D5CD0>
+
+# <aws_cdk.aws_ec2.Vpc object at 0x0000016179F095E0>
 
         
 
@@ -81,7 +90,6 @@ class DmsCdkSetupStack(Stack):
         Phase #2: Provision source - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Source.html
         This will be the bulk of the code. Need to provision infrastructure based on inputs. Will make check if it is valid source EP here.
         """
-
         # RDS CLUSTER: aurora-postgresql and aurora-mysql - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/CfnDBCluster.html
         # Valid for: Source and Target
         # TODO: get rid of Secrets Manager and manually use password+username, may need to create DatabaseInstance - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/DatabaseInstance.html
@@ -286,6 +294,7 @@ class DmsCdkSetupStack(Stack):
             target_endpoint_arn=set_target_endpoint_arn, # target endpoint
             table_mappings= json.dumps({"rules":[{"rule-type":"selection","rule-id":"1","rule-name":"1","object-locator":{"schema-name":"%","table-name":"%"},"rule-action":"include"}]}),
             resource_identifier="cdk-replication-task",
+            replication_task_identifier="cdk-replication-task",
             # the properties below are optional
             # cdc_start_position="cdcStartPosition",
             # cdc_start_time=123,
