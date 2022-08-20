@@ -14,6 +14,7 @@ from constructs import Construct
 
 from .vpc_setup import *
 from .dms_setup import *
+from .data_store_setup import *
 
 
 class DmsCdkSetupStack(Stack):
@@ -57,45 +58,20 @@ class DmsCdkSetupStack(Stack):
         Phase #2: Provision source - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Source.html
         This will be the bulk of the code. Need to provision infrastructure based on inputs. Will make check if it is valid source EP here.
         """
-        # RDS CLUSTER: aurora-postgresql and aurora-mysql - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/CfnDBCluster.html
-        # Valid for: Source and Target
-        # TODO: get rid of Secrets Manager and manually use password+username, may need to create DatabaseInstance - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/DatabaseInstance.html
-        # TODO: setup custom parameter groups for CDC replication
-        if(source_engine == 'aurora-postgresql' or source_engine == 'aurora-mysql'):
-            if(source_engine == 'aurora-postgresql'):
-                set_source_engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_12_11) # Default Aurora PostgreSQL engine version is 12.11
-            if(source_engine == 'aurora-mysql'):
-                set_source_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
+
+        # TODO: Call source=create_data_store(self, source_engine, source_username, self_referencing_security_group, vpc)
+        # TODO: Need to set the correct resource for the wait dependency. With aurora this is the writer instance, with normal DB this is the instance itself
+        # if(source_engine == 'aurora-postgresql' or source_engine == 'aurora-mysql'):
+        isSource=True
+        source=create_data_store(self, isSource, source_engine, source_username, self_referencing_security_group, vpc, "CDKDataStoreSource")
         
-            source_cluster = rds.DatabaseCluster(self, "CDKSourceCluster",
-                engine=set_source_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
-                credentials=rds.Credentials.from_generated_secret(source_username),  # Optional - will default to 'admin' username and generated password
-                instances=1, #TODO: comment out if no instances deployed, need to find out how to deploy only writer
-                cluster_identifier="cdk-source",
-                instance_props=rds.InstanceProps(
-                    # TODO: Make this publicly accessible and launch in public subnet
-                    # optional , defaults to t3.medium
-                    # instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL),
-                    security_groups=[self_referencing_security_group],
-                    vpc_subnets=ec2.SubnetSelection(
-                        subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
-                    ),
-                    vpc=vpc
-                )
-                # TODO: RDS INSTANCE SECURITY GROUP DOES NOT ALLOW ANY INBOUND RULES
-            )
-            source_cluster.apply_removal_policy(RemovalPolicy.DESTROY)
+        # TODO: Create dependency function: different for aurora cluster vs RDS DB instance
+        for child in source.node.children:
+            if(type(child) == rds.CfnDBInstance):  # For nwo we filter by type DB Instance, since we deploy one instance this should be the writer.
+                source_writer=child
 
-            # TODO: Print secret password value for easy access
-            # Set the source object details
-            source = source_cluster
-            for child in source.node.children:
-                if(type(child) == rds.CfnDBInstance):  # For nwo we filter by type DB Instance, since we deploy one instance this should be the writer.
-                    source_writer=child
-
-            # source_writer=source_cluster.node.children[4]
             source_password=source.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
-            # print('Source password ' + source_password) # Print this for user to see
+        # source_host_name_object=find_host_name_object(self, source) ---- returns the source_writer for aurora
 
         # TODO: DocumentDB Cluster - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_docdb/README.html
         # elif(source_engine == 'documentdb'): 
@@ -104,7 +80,7 @@ class DmsCdkSetupStack(Stack):
         # RDS INSTANCE: postgres, mysql, ... ,  - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/CfnDBInstance.html
         # TODO: support all valid RDS instance options
         # mariadb mysql oracle-ee oracle-se2 oracle-se1 oracle-se postgres sqlserver-ee sqlserver-se sqlserver-ex sqlserver-web
-        elif(source_engine == 'postgres' or source_engine == 'mysql'):
+        if(source_engine == 'postgres' or source_engine == 'mysql'):
             if(source_engine == 'postgres'):
                 set_target_engine=rds.DatabaseInstanceEngine.POSTGRES # Default PostgreSQL engine version
             elif(source_engine == 'mysql'):
@@ -126,36 +102,16 @@ class DmsCdkSetupStack(Stack):
         Phase #3: Provision target - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Target.html
         This will be the bulk of the code. Need to provision infrastructure based on inputs. Will make check if it is valid target EP here.
         """
-        # TODO: aurora-postgresql or aurora-mysql
-        if(target_engine == 'aurora-postgresql' or target_engine == 'aurora-mysql'):
-            if(target_engine == 'aurora-postgresql'):
-                set_target_engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_12_11) # Default Aurora PostgreSQL engine version is 12.11
-            if(target_engine == 'aurora-mysql'):
-                set_target_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
-            
-            target_cluster = rds.DatabaseCluster(self, "CDKTargetCluster",
-                engine=set_target_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
-                credentials=rds.Credentials.from_generated_secret(target_username),  # Optional - will default to 'admin' username and generated password
-                instances=1, #TODO: comment out if no instances deployed, need to find out how to deploy only writer
-                # credentials=rds.Credentials.from_password(source_username, source_password), #TODO: It is not recommended to expose password in CDK, manual process to view secrets manager created and use auto-generated value
-                cluster_identifier="cdk-target",
-                instance_props=rds.InstanceProps(
-                    # optional , defaults to t3.medium
-                    # instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL),
-                    security_groups=[self_referencing_security_group],
-                    vpc_subnets=ec2.SubnetSelection(
-                        subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
-                    ),
-                    vpc=vpc
-                )
-            )
-            target_cluster.apply_removal_policy(RemovalPolicy.DESTROY)
-            target=target_cluster
-            target_password=target.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
 
-            for child in target.node.children:
-                if(type(child) == rds.CfnDBInstance):  # For nwo we filter by type DB Instance, since we deploy one instance this should be the writer.
-                    target_writer=child
+        isSource=False
+        target=create_data_store(self, isSource, target_engine, target_username, self_referencing_security_group, vpc, "CDKDataStoreTarget")
+
+        # TODO: Create dependency function: different for aurora cluster vs RDS DB instance
+        for child in target.node.children:
+            if(type(child) == rds.CfnDBInstance):  # For nwo we filter by type DB Instance, since we deploy one instance this should be the writer.
+                target_writer=child
+
+            target_password=target.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
 
         # TODO: DocumentDB
         # elif(target_engine == 'documentdb'):
@@ -188,8 +144,11 @@ class DmsCdkSetupStack(Stack):
         # Checks if cluster type
         if(type(source) == rds.DatabaseCluster):
             set_source_engine_name=source.engine.engine_type
-            set_source_server_name=source_cluster.cluster_endpoint.hostname
-            set_source_port=source_cluster.cluster_endpoint.port
+            # set_source_server_name=source_cluster.cluster_endpoint.hostname
+            # set_source_port=source_cluster.cluster_endpoint.port
+            
+            set_source_server_name=source.cluster_endpoint.hostname
+            set_source_port=source.cluster_endpoint.port
         # if(type(source) == rds.Database)
         # if(type(source) == docdb.DatabaseCluster)
 
@@ -204,7 +163,6 @@ class DmsCdkSetupStack(Stack):
             port=set_source_port,
             endpoint_identifier="cdk-source-endpoint"
         )
-        set_source_endpoint_arn = source_endpoint.ref
         source_endpoint.add_depends_on(source_writer) # need to wait on writer instance host name to resolve
 
         # TODO: Target endpoint 
@@ -213,8 +171,8 @@ class DmsCdkSetupStack(Stack):
             print('target is Aurora')
             # TODO: add target info
             set_target_engine_name=target.engine.engine_type
-            set_target_server_name=target_cluster.cluster_endpoint.hostname
-            set_target_port=target_cluster.cluster_endpoint.port
+            set_target_server_name=target.cluster_endpoint.hostname
+            set_target_port=target.cluster_endpoint.port
         
         # Currently using cluster, will need to use generic object.
         target_endpoint = dms.CfnEndpoint(target, "CDKTargetEndpoint",  

@@ -15,7 +15,6 @@ def create_subnet_group(self, vpc):
     )
     return rep_sub
 
-# TODO: Migrate from 'dms_cdk_setup_stack.py'
 def create_DMS_replication_instance(self, rep_sub, self_referencing_security_group):
         replication_instance = dms.CfnReplicationInstance(self, "CDKReplicationInstance",
             replication_instance_class="dms.t3.small",
@@ -24,7 +23,6 @@ def create_DMS_replication_instance(self, rep_sub, self_referencing_security_gro
             vpc_security_group_ids=[self_referencing_security_group.security_group_id], # Add rule
             replication_instance_identifier="cdk-replication-instance", 
         )
-        set_replication_instance_arn = replication_instance.ref
         return replication_instance
 
 # TODO: Migrate from 'dms_cdk_setup_stack.py'
@@ -32,9 +30,6 @@ def create_DMS_replication_task(self, replication_instance, source_endpoint, tar
     set_source_endpoint_arn = source_endpoint.ref
     set_target_endpoint_arn = target_endpoint.ref
     set_replication_instance_arn = replication_instance.ref
-
-
-
 
     replication_task = dms.CfnReplicationTask(self, "CDKReplicationTask",
         migration_type="full-load", # full-load | cdc | full-load-and-cdc
@@ -57,7 +52,7 @@ def create_DMS_replication_task(self, replication_instance, source_endpoint, tar
         # task_data="taskData"
     )
     add_DMS_replication_task_dependencies(self, replication_task, replication_instance, source_endpoint, target_endpoint)
-    
+
 
 def add_DMS_replication_task_dependencies(self, replication_task, replication_instance, source_endpoint, target_endpoint):
     replication_task.add_depends_on(replication_instance)
