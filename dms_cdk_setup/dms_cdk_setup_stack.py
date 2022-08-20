@@ -48,42 +48,7 @@ class DmsCdkSetupStack(Stack):
         Create with best practices in mind for public and private subnets
         """
         vpc=createVPC(self)
-        # vpc=VPCDefault(self, 'CDKDMSVPC')
-        # TODO: Verify if DNS host names enabled
-        # vpc = ec2.Vpc(self, 'CDKDMSVPC', 
-        #     cidr="10.0.0.0/16",
-        #     max_azs=3,
-        #     subnet_configuration=[
-        #         ec2.SubnetConfiguration(
-        #             cidr_mask=24,
-        #             name='public1',
-        #             subnet_type=ec2.SubnetType.PUBLIC
-        #         ),
-        #         ec2.SubnetConfiguration(
-        #             cidr_mask=24,
-        #             name='private1',
-        #             subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
-        #         )
-        #     ]  
-        # )
-        # print(vpc)
-
-# <class 'dms_cdk_setup.vpc_setup.VPCDefault'>
-# <dms_cdk_setup.vpc_setup.VPCDefault object at 0x00000205299D5CD0>
-
-# <aws_cdk.aws_ec2.Vpc object at 0x0000016179F095E0>
-
-        
-
-        # TODO: Add self-referencing security group for all AWS resources to use in their inbound rule
-        # TODO: Difference between ISecurityGroup and SecurityGroup
-        self_referencing_security_group = ec2.SecurityGroup(self, 'CDKSelfReferencingRule',
-            vpc=vpc,
-            description='Self-referencing security group',
-            allow_all_outbound=True
-        )
-        self_referencing_security_group.add_ingress_rule(self_referencing_security_group, ec2.Port.all_tcp(), "Self-referencing rule")
-        self_referencing_security_group.security_group_id
+        self_referencing_security_group=createSelfReferencingSecurityGroup(self, vpc)
 
 
         """
