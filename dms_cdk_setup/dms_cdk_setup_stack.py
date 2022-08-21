@@ -56,92 +56,35 @@ class DmsCdkSetupStack(Stack):
 
         """
         Phase #2: Provision source - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Source.html
-        This will be the bulk of the code. Need to provision infrastructure based on inputs. Will make check if it is valid source EP here.
         """
-
-        # TODO: Call source=create_data_store(self, source_engine, source_username, self_referencing_security_group, vpc)
-        # TODO: Need to set the correct resource for the wait dependency. With aurora this is the writer instance, with normal DB this is the instance itself
-        # if(source_engine == 'aurora-postgresql' or source_engine == 'aurora-mysql'):
         isSource=True
         source=create_data_store(self, isSource, source_engine, source_username, self_referencing_security_group, vpc, "CDKDataStoreSource")
         
-        # TODO: Create dependency function: different for aurora cluster vs RDS DB instance
-        for child in source.node.children:
-            if(type(child) == rds.CfnDBInstance):  # For nwo we filter by type DB Instance, since we deploy one instance this should be the writer.
-                source_writer=child
+        source_password=source.secret.secret_value_from_json('password').unsafe_unwrap() # Retrieve source password for Aurora cluster
 
-            source_password=source.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
-        # source_host_name_object=find_host_name_object(self, source) ---- returns the source_writer for aurora
+        # Returns the writer instance host name for DB cluster (e.g. Aurora PostgreSQL), the writer instance host name for a DB instance (e.g. Oracle RDS)
+        source_host_name_object=find_host_name_object(self, source)
+                
 
-        # TODO: DocumentDB Cluster - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_docdb/README.html
-        # elif(source_engine == 'documentdb'): 
-
-
-        # RDS INSTANCE: postgres, mysql, ... ,  - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/CfnDBInstance.html
-        # TODO: support all valid RDS instance options
-        # mariadb mysql oracle-ee oracle-se2 oracle-se1 oracle-se postgres sqlserver-ee sqlserver-se sqlserver-ex sqlserver-web
-        if(source_engine == 'postgres' or source_engine == 'mysql'):
-            if(source_engine == 'postgres'):
-                set_target_engine=rds.DatabaseInstanceEngine.POSTGRES # Default PostgreSQL engine version
-            elif(source_engine == 'mysql'):
-                set_target_engine=rds.DatabaseInstanceEngine.MYSQL # Default MySQL engine version
-            
-            source_instance = rds.DatabaseInstance(self, "Instance",
-                engine=set_target_engine
-            )
-            source=source_instance
-
-
-        # S3 BUCKET
-        elif(source_engine == 's3'):
-            source_bucket = s3.Bucket(self, "dms-cdk-setup")
-            source_bucket.apply_removal_policy(RemovalPolicy.DESTROY)
-            source=source_bucket
-        
         """
         Phase #3: Provision target - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Target.html
         This will be the bulk of the code. Need to provision infrastructure based on inputs. Will make check if it is valid target EP here.
         """
-
         isSource=False
         target=create_data_store(self, isSource, target_engine, target_username, self_referencing_security_group, vpc, "CDKDataStoreTarget")
 
-        # TODO: Create dependency function: different for aurora cluster vs RDS DB instance
-        for child in target.node.children:
-            if(type(child) == rds.CfnDBInstance):  # For nwo we filter by type DB Instance, since we deploy one instance this should be the writer.
-                target_writer=child
+        target_password=target.secret.secret_value_from_json('password').unsafe_unwrap() # Retrieve source password for Aurora cluster
 
-            target_password=target.secret.secret_value_from_json('password').unsafe_unwrap() # Configure password with best practice
+        # Returns the writer instance host name for DB cluster (e.g. Aurora PostgreSQL), the writer instance host name for a DB instance (e.g. Oracle RDS)
+        target_host_name_object=find_host_name_object(self, target)
 
-        # TODO: DocumentDB
-        # elif(target_engine == 'documentdb'):
-        #     target='documentdb'
-
-        # TODO: support all valid RDS instance options
-        # mariadb mysql oracle-ee oracle-se2 oracle-se1 oracle-se postgres sqlserver-ee sqlserver-se sqlserver-ex sqlserver-web
-        # elif(target_engine == 'postgres'):
-        #     target='postgres'
-
-        # TODO: S3
-        # TODO: Redshift
-        # TODO: DynamoDB
-        # TODO: Kafka
-        # TODO: Kinesis
-        # TODO: DynamoDB
-        # TODO: Neptune
-        # TODO: Redis
-        # TODO: OpenSearch
-        # TODO: Babelfish
 
         """
         Phase #4: Create source and target endpoint
         https://docs.aws.amazon.com/cdk/api/v1/python/aws_cdk.aws_dms/CfnEndpoint.html
         """
-        # Supported Sources for data migration - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Introduction.Sources.html
-        # Supported Targets for data migration - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Introduction.Targets.html
-
-        # TODO: source endpoint
-        # Checks if cluster type
+        # TODO: Separate logic for endpoints to separate file
+        # This should be handled in Phase #2 with a function
         if(type(source) == rds.DatabaseCluster):
             set_source_engine_name=source.engine.engine_type
             # set_source_server_name=source_cluster.cluster_endpoint.hostname
@@ -163,10 +106,10 @@ class DmsCdkSetupStack(Stack):
             port=set_source_port,
             endpoint_identifier="cdk-source-endpoint"
         )
-        source_endpoint.add_depends_on(source_writer) # need to wait on writer instance host name to resolve
+        source_endpoint.add_depends_on(source_host_name_object) # need to wait on host name to resolve
 
-        # TODO: Target endpoint 
-        # Checks if cluster type
+        # TODO: Separate logic for endpoints to separate file
+        # This should be handled in Phase #3 with a function
         if(type(target) == rds.DatabaseCluster):
             print('target is Aurora')
             # TODO: add target info
@@ -185,15 +128,11 @@ class DmsCdkSetupStack(Stack):
             port=set_target_port,
             endpoint_identifier="cdk-target-endpoint"
         )
-        target_endpoint.add_depends_on(target_writer)        
+        target_endpoint.add_depends_on(target_host_name_object)        
 
         """
         Phase #5: Create DMS replication instance and DMS task
-        
         """
-
         rep_sub=create_subnet_group(self, vpc)
-
         replication_instance=create_DMS_replication_instance(self, rep_sub, self_referencing_security_group)
-
         create_DMS_replication_task(self, replication_instance, source_endpoint, target_endpoint)

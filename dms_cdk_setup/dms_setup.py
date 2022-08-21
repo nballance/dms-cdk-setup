@@ -9,8 +9,9 @@ def create_subnet_group(self, vpc):
     for sub in vpc.private_subnets:
         tmp.append(sub.subnet_id)
 
-    rep_sub = dms.CfnReplicationSubnetGroup(self, "rep_sub",
-        replication_subnet_group_description="desc rep_sub",
+    rep_sub = dms.CfnReplicationSubnetGroup(self, "CDKReplicationSubnetGroup",
+        replication_subnet_group_description="CDK replication subnet group",
+        replication_subnet_group_identifier="cdk-replication-subnet-group",
         subnet_ids=tmp
     )
     return rep_sub
