@@ -7,6 +7,8 @@ from dms_cdk_setup.dms_cdk_setup_stack import DmsCdkSetupStack
 
 
 app = cdk.App()
+# TODO: Have user input source/target engine versions. 
+
 DmsCdkSetupStack(app, "DMSCDKSetupStack",
     # If you don't specify 'env', this stack will be environment-agnostic.
     # Account/Region-dependent features and context lookups will not work,
