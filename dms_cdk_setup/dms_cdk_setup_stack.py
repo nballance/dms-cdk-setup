@@ -32,7 +32,7 @@ class DmsCdkSetupStack(Stack):
         # Set the target engine, e.g.                        #
         # target_engine = 'kafka'                            #
         ######################################################
-        source_engine='aurora-postgresql'
+        source_engine='aurora-mysql'
         # source_password='replaceme123' #TODO: It is not best practice to have password in CDK, can manually retrieve from secrets manager
         source_username='syscdk'
         target_engine = 'aurora-postgresql'

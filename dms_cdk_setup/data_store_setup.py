@@ -72,12 +72,17 @@ def create_data_store(self, isSource, engine, username, self_referencing_securit
 # TODO: Create functions to create each data store
 def create_aurora(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name):
     if(engine == 'aurora-postgresql'):
-            set_engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_12_11) # Default Aurora PostgreSQL engine version is 12.11
-            cluster_parameter_group_aurora={
-                "rds.logical_replication": "1"
-            }
+        print('aurora-postgresql')
+        set_engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_12_11) # Default Aurora PostgreSQL engine version is 12.11
+        cluster_parameter_group_aurora={
+            "rds.logical_replication": "1"
+        }
     else: #(engine == 'aurora-mysql'):
+        print('aurora-mysql')
         set_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
+        # cluster_parameter_group_aurora={
+        #     "binlog_format": "ROW"
+        # }
 
     if(isSource):
         identifier="cdk-source"
@@ -100,7 +105,7 @@ def create_aurora(self, isSource, engine, username, self_referencing_security_gr
             ),
             vpc=vpc,   
         ),
-        parameters=cluster_parameter_group_aurora
+        # parameters=cluster_parameter_group_aurora
     )
     cluster.apply_removal_policy(RemovalPolicy.DESTROY)
 

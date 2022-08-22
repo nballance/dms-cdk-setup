@@ -42,8 +42,8 @@ def create_DMS_replication_task(self, replication_instance, source_endpoint, tar
         source_endpoint_arn=set_source_endpoint_arn, # source endpoint
         target_endpoint_arn=set_target_endpoint_arn, # target endpoint
         table_mappings= json.dumps({"rules":[{"rule-type":"selection","rule-id":"1","rule-name":"1","object-locator":{"schema-name":"%","table-name":"%"},"rule-action":"include"}]}),
-        resource_identifier="cdk-replication-task",
-        replication_task_identifier="cdk-replication-task",
+        resource_identifier="cdk-replication-task-ri",
+        replication_task_identifier="cdk-replication-task-i",
         # the properties below are optional
         # cdc_start_position="cdcStartPosition",
         # cdc_start_time=123,
@@ -67,12 +67,25 @@ def add_DMS_replication_task_dependencies(self, replication_task, replication_in
 
 def create_aurora_endpoint(self, isSource, data_store, set_username):
     if(type(data_store) == rds.DatabaseCluster):
-                
+        set_database_name=''
+        print('default engine name')
+        set_engine_name=''
+        if(data_store.engine.engine_type == 'aurora-mysql' or data_store.engine.engine_type=='aurora'):
+            print('aurora-mysql/aurora engine name')
+            set_database_name=''
+            set_engine_name='aurora'
+        elif(data_store.engine.engine_type == 'aurora-postgresql'):
+            print('aurora-postgresql engine name')
+            set_database_name='postgres'
+            set_engine_name=data_store.engine.engine_type
+        else:
+            print(data_store.engine.engine_type)
+            print('INVALID ENGINE NAME')
+
         set_password=data_store.secret.secret_value_from_json('password').unsafe_unwrap() # Retrieve source password for Aurora cluster
 
         # Returns the writer instance host name for DB cluster (e.g. Aurora PostgreSQL), the writer instance host name for a DB instance (e.g. Oracle RDS)
         set_host_name_object=find_host_name_object(self, data_store)
-        set_engine_name=data_store.engine.engine_type
         set_server_name=data_store.cluster_endpoint.hostname
         set_port=data_store.cluster_endpoint.port
     if(isSource):
@@ -84,17 +97,28 @@ def create_aurora_endpoint(self, isSource, data_store, set_username):
         set_endpoint_type="target"
         set_endpoint_identifier="cdk-target-endpoint"
 
-    # Currently using cluster, will need to use generic object.
-    aurora_endpoint = dms.CfnEndpoint(data_store, resource_endpoint_name,
-        endpoint_type=set_endpoint_type, #EndpointType
-        engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
-        database_name="postgres", 
-        password=set_password, #need to retrieve from secrets manager
-        username=set_username, #need to retrieve from secrets manager
-        server_name=set_server_name,
-        port=set_port,
-        endpoint_identifier=set_endpoint_identifier
-    )
+    if(data_store.engine == 'aurora-mysql'):
+        aurora_endpoint = dms.CfnEndpoint(data_store, resource_endpoint_name,
+            endpoint_type=set_endpoint_type, #EndpointType
+            engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
+            password=set_password, #need to retrieve from secrets manager
+            username=set_username, #need to retrieve from secrets manager
+            server_name=set_server_name,
+            port=set_port,
+            endpoint_identifier=set_endpoint_identifier
+        )
+    else: #(data_store.engine == 'aurora-postgresql'):
+        aurora_endpoint = dms.CfnEndpoint(data_store, resource_endpoint_name,
+            endpoint_type=set_endpoint_type, #EndpointType
+            engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
+            database_name=set_database_name, 
+            password=set_password, #need to retrieve from secrets manager
+            username=set_username, #need to retrieve from secrets manager
+            server_name=set_server_name,
+            port=set_port,
+            endpoint_identifier=set_endpoint_identifier
+        )
+
     aurora_endpoint.add_depends_on(set_host_name_object) # need to wait on host name to resolve
     return aurora_endpoint
 

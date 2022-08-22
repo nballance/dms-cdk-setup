@@ -34,3 +34,4 @@ def create_default_security_group(self, vpc):
                 allow_all_outbound=True
             )
     return self_referencing_security_group
+    # ec2.Peer.prefixList("pl-12345678")
