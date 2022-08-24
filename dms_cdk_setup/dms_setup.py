@@ -97,7 +97,7 @@ def create_aurora_endpoint(self, isSource, data_store, set_username):
         set_endpoint_type="target"
         set_endpoint_identifier="cdk-target-endpoint"
 
-    if(data_store.engine == 'aurora-mysql'):
+    if(data_store.engine == 'aurora-mysql'): # MySQL does not have a database_name
         aurora_endpoint = dms.CfnEndpoint(data_store, resource_endpoint_name,
             endpoint_type=set_endpoint_type, #EndpointType
             engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
@@ -122,7 +122,58 @@ def create_aurora_endpoint(self, isSource, data_store, set_username):
     aurora_endpoint.add_depends_on(set_host_name_object) # need to wait on host name to resolve
     return aurora_endpoint
 
+# TODO: Pass in the set values. Set the values in the data_store_setup file
+def create_database_instance_endpoint(self, isSource, data_store, set_username):
+    set_engine_name=data_store.engine.engine_type
+    set_port=data_store.instance_endpoint.port
+    set_server_name=data_store.instance_endpoint.hostname
+    set_password=data_store.secret.secret_value_from_json('password').unsafe_unwrap() # Retrieve source password for Aurora cluster
 
+    set_host_name_object=find_host_name_object(self, data_store)
+
+    # TODO: Make a function to get database_name and call it. Determine all database_name attributes, for now mysql and postgres
+    set_database_name=''
+    if(data_store.engine.engine_type=='postgres'):
+        set_database_name=data_store.engine.engine_type
+    else:
+        print('Current database instance endpoint engine is not supported')
+
+
+
+    if(isSource):
+        resource_endpoint_name="CDKSourceEndpoint"
+        set_endpoint_type="source"
+        set_endpoint_identifier="cdk-source-endpoint"
+    else:
+        resource_endpoint_name="CDKTargetEndpoint"
+        set_endpoint_type="target"
+        set_endpoint_identifier="cdk-target-endpoint"
+
+    if(data_store.engine == 'mysql'): # MySQL does not have a database_name
+        database_instance_endpoint = dms.CfnEndpoint(data_store, resource_endpoint_name,
+            endpoint_type=set_endpoint_type, #EndpointType
+            engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
+            password=set_password, #need to retrieve from secrets manager
+            username=set_username, #need to retrieve from secrets manager
+            server_name=set_server_name,
+            port=set_port,
+            endpoint_identifier=set_endpoint_identifier
+        )
+    else: #(data_store.engine == 'aurora-postgresql'):
+        database_instance_endpoint = dms.CfnEndpoint(data_store, resource_endpoint_name,
+            endpoint_type=set_endpoint_type, #EndpointType
+            engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
+            database_name=set_database_name, 
+            password=set_password, #need to retrieve from secrets manager
+            username=set_username, #need to retrieve from secrets manager
+            server_name=set_server_name,
+            port=set_port,
+            endpoint_identifier=set_endpoint_identifier
+        )
+
+    # TODO: test if this is needed since this function is only called after the start of the instance
+    database_instance_endpoint.add_depends_on(set_host_name_object) # need to wait on host name to resolve
+    return database_instance_endpoint
 
 # Function to find the main host name. For DB instance this is the DB instance. For Aurora this is the writer. Depends on the type
 def find_host_name_object(self, data_store):
@@ -131,7 +182,11 @@ def find_host_name_object(self, data_store):
             if(type(child) == rds.CfnDBInstance):  # For now we filter by type DB Instance, since we deploy one instance this should be the writer.
                 host_name_object=child
                 return host_name_object
-
+    elif(type(data_store) == rds.DatabaseInstance):
+        for child in data_store.node.children:
+            if(type(child) == rds.CfnDBInstance):  # For now we filter by type DB Instance, since we deploy one instance this should be the writer.
+                host_name_object=child
+                return host_name_object
     else:
         print('find_host_name_object type not defined')
         return ''
