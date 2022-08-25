@@ -2,6 +2,7 @@ from aws_cdk import (
     aws_rds as rds,
     aws_ec2 as ec2,
     RemovalPolicy,
+    aws_dynamodb as dynamodb
 )
 from .dms_setup import *
 
@@ -20,7 +21,10 @@ def create_data_store(self, isSource, engine, username, self_referencing_securit
             data_store=create_database_instance(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
             data_store_endpoint=create_database_instance_endpoint(self, isSource, data_store, username)
 
-        # TODO: Need to input all possible valid sources
+
+
+
+
         # TODO: DocumentDB Cluster - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_docdb/README.html
         # elif(source_engine == 'documentdb'): 
         # RDS INSTANCE: postgres, mysql, ... ,  - https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_rds/CfnDBInstance.html
@@ -53,6 +57,11 @@ def create_data_store(self, isSource, engine, username, self_referencing_securit
         elif (engine == 'postgres' or engine == 'mariadb' or engine == 'mysql' or engine == 'oracle-ee' or engine == 'oracle-se2' or engine == 'oracle-se1' or engine == 'oracle-se' or engine == 'postgres' or engine == 'sqlserver-ee' or engine == 'sqlserver-se' or engine == 'sqlserver-ex' or engine == 'sqlserver-web'):
             data_store=create_database_instance(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
             data_store_endpoint=create_database_instance_endpoint(self, isSource, data_store, username)
+
+        elif (engine == 'dynamodb'):
+            data_store=create_ddb_table(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
+            data_store_endpoint=create_ddb_endpoint(self, isSource, data_store, username)
+
         # TODO: Need to input all possible valid targets
         # TODO: DocumentDB
         # elif(target_engine == 'documentdb'):
@@ -181,3 +190,11 @@ def create_database_instance(self, isSource, engine, username, self_referencing_
     instance.apply_removal_policy(RemovalPolicy.DESTROY)
 
     return instance
+
+def create_ddb_table(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name):
+    table = dynamodb.Table(self, "Table",
+    partition_key=dynamodb.Attribute(name="id", type=dynamodb.AttributeType.STRING),
+    # sort_key=dynamodb.Attribute(name="sort_key", type=dynamodb.AttributeType.STRING),
+    )
+    table.apply_removal_policy(RemovalPolicy.DESTROY)
+    return table

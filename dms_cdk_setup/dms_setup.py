@@ -1,6 +1,7 @@
 from aws_cdk import (
     aws_dms as dms,
     aws_rds as rds,
+    aws_iam as iam,
 
 )
 import json
@@ -159,7 +160,7 @@ def create_database_instance_endpoint(self, isSource, data_store, set_username):
             port=set_port,
             endpoint_identifier=set_endpoint_identifier
         )
-    else: #(data_store.engine == 'aurora-postgresql'):
+    else: #TODO: (data_store.engine == 'postgres'): Need to check for other engines the default 'database_name' e.g. oracle, sql server, mariadb, etc
         database_instance_endpoint = dms.CfnEndpoint(data_store, resource_endpoint_name,
             endpoint_type=set_endpoint_type, #EndpointType
             engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
@@ -174,6 +175,46 @@ def create_database_instance_endpoint(self, isSource, data_store, set_username):
     # TODO: test if this is needed since this function is only called after the start of the instance
     database_instance_endpoint.add_depends_on(set_host_name_object) # need to wait on host name to resolve
     return database_instance_endpoint
+
+
+# TODO: Add support for DynamoDB endpoint
+# DynamoDB uses a "service access role"
+def create_ddb_endpoint(self, isSource, data_store, set_username):
+    # set_engine_name=data_store.engine.engine_type
+    # set_port=data_store.instance_endpoint.port
+    # set_server_name=data_store.instance_endpoint.hostname
+    # set_password=data_store.secret.secret_value_from_json('password').unsafe_unwrap()
+    
+    resource_endpoint_name="CDKTargetEndpoint"
+    set_endpoint_type="target"
+    set_endpoint_identifier="cdk-target-endpoint"
+
+    ddb_role = iam.Role(
+    self,
+    "dms_ddb_role",
+    assumed_by=iam.ServicePrincipal("dms.amazonaws.com"),
+    managed_policies=[
+        iam.ManagedPolicy.from_aws_managed_policy_name("AmazonDynamoDBFullAccess"),
+    ],
+    )
+    ddb_role_arn=ddb_role.role_arn
+
+    ddb_instance_endpoint = dms.CfnEndpoint(data_store, resource_endpoint_name,
+        endpoint_type=set_endpoint_type, #EndpointType
+        engine_name="dynamodb", #engineName is hardcoded with dynamodb
+        
+        dynamo_db_settings=dms.CfnEndpoint.DynamoDbSettingsProperty(
+            service_access_role_arn=ddb_role_arn
+        ),
+        # database_name=set_database_name, 
+        # password=set_password, #need to retrieve from secrets manager
+        # username=set_username, #need to retrieve from secrets manager
+        # server_name=set_server_name,
+        # port=set_port,
+        endpoint_identifier=set_endpoint_identifier
+    )
+    return ddb_instance_endpoint
+
 
 # Function to find the main host name. For DB instance this is the DB instance. For Aurora this is the writer. Depends on the type
 def find_host_name_object(self, data_store):
