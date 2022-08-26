@@ -1,6 +1,7 @@
 from aws_cdk import (
     aws_rds as rds,
     aws_ec2 as ec2,
+    aws_s3 as s3,
     RemovalPolicy,
     aws_dynamodb as dynamodb
 )
@@ -21,7 +22,10 @@ def create_data_store(self, isSource, engine, username, self_referencing_securit
             data_store=create_database_instance(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
             data_store_endpoint=create_database_instance_endpoint(self, isSource, data_store, username)
 
-
+        elif (engine == 's3'):
+            data_store=create_s3_bucket(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
+            data_store_endpoint=create_s3_endpoint(self, isSource, data_store, username)
+        
 
 
 
@@ -61,6 +65,10 @@ def create_data_store(self, isSource, engine, username, self_referencing_securit
         elif (engine == 'dynamodb'):
             data_store=create_ddb_table(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
             data_store_endpoint=create_ddb_endpoint(self, isSource, data_store, username)
+
+        elif (engine == 's3'):
+            data_store=create_s3_bucket(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
+            data_store_endpoint=create_s3_endpoint(self, isSource, data_store, username)
 
         # TODO: Need to input all possible valid targets
         # TODO: DocumentDB
@@ -198,3 +206,19 @@ def create_ddb_table(self, isSource, engine, username, self_referencing_security
     )
     table.apply_removal_policy(RemovalPolicy.DESTROY)
     return table
+
+
+# TODO: Add s3 as source/target, trying 'get_cdk_identifier' instead of IF/ELSE check...
+def create_s3_bucket(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name):
+    bucket = s3.Bucket(self, "Bucket")
+    bucket.apply_removal_policy(RemovalPolicy.DESTROY)
+    return bucket
+
+
+# Simple function to map the isSource value to the CDK identifier value -- possibly use this in the dms_setup file
+def get_cdk_identifier(isSource):
+    if(isSource):
+        identifier="cdk-source"
+    else:
+        identifier="cdk-target"
+    return identifier

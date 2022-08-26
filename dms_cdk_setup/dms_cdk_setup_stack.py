@@ -32,10 +32,10 @@ class DmsCdkSetupStack(Stack):
         # Set the target engine, e.g.                        #
         # target_engine = 'kafka'                            #
         ######################################################
-        source_engine='postgres'
+        source_engine='mysql'
         # source_password='replaceme123' #TODO: It is not best practice to have password in CDK, can manually retrieve from secrets manager
         source_username='syscdk'
-        target_engine = 'dynamodb'
+        target_engine = 's3'
         target_username=source_username
 
         # Create VPC and Security Group
