@@ -1,7 +1,7 @@
-from dms_cdk_setup.data_stores.dynamodb_table import create_dynamodb_table
-from dms_cdk_setup.data_stores.s3_bucket import create_s3_bucket
-from dms_cdk_setup.data_stores.rds_database_instance import create_database_instance
-from dms_cdk_setup.data_stores.rds_database_cluster import create_aurora
+from dms_cdk_setup.data_stores.dynamodb_table import create_dynamodb_endpoint, create_dynamodb_table
+from dms_cdk_setup.data_stores.s3_bucket import create_s3_bucket, create_s3_endpoint
+from dms_cdk_setup.data_stores.rds_database_instance import create_database_instance, create_database_instance_endpoint
+from dms_cdk_setup.data_stores.rds_database_cluster import create_aurora, create_aurora_endpoint
 
 from .dms_setup import *
 

@@ -26,7 +26,7 @@ class DmsCdkSetupStack(Stack):
         source_engine='postgres'
         # source_password='replaceme123' #TODO: It is not best practice to have password in CDK, can manually retrieve from secrets manager
         source_username='syscdk'
-        target_engine = 'dynamodb'
+        target_engine = 'aurora-postgresql'
         target_username=source_username
         
 # Add user in put using input function
