@@ -158,9 +158,13 @@ def create_database_instance(self, isSource, engine, username, self_referencing_
         set_engine=rds.DatabaseInstanceEngine.POSTGRES
     elif(engine == 'sqlserver-ee'): 
         print('sqlserver-ee')
+        print('    license included')
+        set_license_model=rds.LicenseModel.LICENSE_INCLUDED,
         set_engine=rds.DatabaseInstanceEngine.SQL_SERVER_EE
     elif(engine == 'sqlserver-se'): 
         print('sqlserver-se')
+        set_license_model=rds.LicenseModel.LICENSE_INCLUDED,
+        print('    license included')
         set_engine=rds.DatabaseInstanceEngine.SQL_SERVER_SE  
     elif(engine == 'sqlserver-ex'): 
         print('sqlserver-ex')
@@ -182,19 +186,34 @@ def create_database_instance(self, isSource, engine, username, self_referencing_
         print('oracle-se')
         set_engine=rds.DatabaseInstanceEngine.oracle_se2(version=rds.OracleEngineVersion.VER_19_0_0_0_2020_04_R1) 
     '''
-    
-    instance = rds.DatabaseInstance(self, "Instance",
-        engine=set_engine,
-        instance_identifier=identifier,
-        # optional, defaults to m5.large
-        instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.SMALL),
-        credentials=rds.Credentials.from_generated_secret(username),  # Optional - will default to 'admin' username and generated password
-        vpc=vpc,
-        vpc_subnets=ec2.SubnetSelection( # Double check same networking subnets, no new subnets created
-            subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
-        ),
-        security_groups=[self_referencing_security_group],
-    )
+    if(engine == 'sqlserver-ee' or engine == 'sqlserver-se'):  # If this is a license-included engine
+        instance = rds.DatabaseInstance(self, stack_name,
+            engine=set_engine,
+            instance_identifier=identifier,
+            # license_model=set_license_model,
+            license_model=rds.LicenseModel.LICENSE_INCLUDED,
+            # optional, defaults to m5.large
+            instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.XLARGE), # SQL Server Instance Class support - https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_SQLServer.html#SQLServer.Concepts.General.InstanceClasses
+            credentials=rds.Credentials.from_generated_secret(username),  # Optional - will default to 'admin' username and generated password
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection( # Double check same networking subnets, no new subnets created
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
+            ),
+            security_groups=[self_referencing_security_group],
+        )
+    else:
+        instance = rds.DatabaseInstance(self, stack_name,
+            engine=set_engine,
+            instance_identifier=identifier,
+            # optional, defaults to m5.large
+            instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.SMALL),
+            credentials=rds.Credentials.from_generated_secret(username),  # Optional - will default to 'admin' username and generated password
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection( # Double check same networking subnets, no new subnets created
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
+            ),
+            security_groups=[self_referencing_security_group],
+        )
     instance.apply_removal_policy(RemovalPolicy.DESTROY)
 
     return instance
@@ -210,7 +229,7 @@ def create_ddb_table(self, isSource, engine, username, self_referencing_security
 
 # TODO: Add s3 as source/target, trying 'get_cdk_identifier' instead of IF/ELSE check...
 def create_s3_bucket(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name):
-    bucket = s3.Bucket(self, "Bucket")
+    bucket = s3.Bucket(self, "Bucket") # Change bucket to stack_name if successful
     bucket.apply_removal_policy(RemovalPolicy.DESTROY)
     return bucket
 

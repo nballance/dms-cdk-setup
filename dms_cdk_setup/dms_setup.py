@@ -139,10 +139,27 @@ def create_database_instance_endpoint(self, isSource, data_store, set_username):
         set_database_name=data_store.engine.engine_type
     elif(data_store.engine.engine_type=='mysql'):
         print('database instance endpoint engine is mysql')
+    elif(data_store.engine.engine_type=='mariadb'):
+        print('database instance endpoint engine is mariadb')
+    elif(data_store.engine.engine_type=='sqlserver-web'):
+        print('database instance endpoint engine is sqlserver-web')
+        set_engine_name='sqlserver'
+        set_database_name='rdsadmin'
+        # TODO: Test Endpoint failed: Application-Status: 1020912, Application-Message: Cannot connect to SQL Server Authentication failed, Application-Detailed-Message: RetCode: SQL_ERROR SqlState: 28000 NativeError: 18456 Message: [unixODBC][Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Login failed for user 'syscdk'.
+    elif(data_store.engine.engine_type=='sqlserver-ex'):
+        print('database instance endpoint engine is sqlserver-ex')
+        set_engine_name='sqlserver'
+        set_database_name='rdsadmin'
+    elif(data_store.engine.engine_type=='sqlserver-se'):
+        print('database instance endpoint engine is sqlserver-se')
+        set_engine_name='sqlserver'
+        set_database_name='rdsadmin'
+    elif(data_store.engine.engine_type=='sqlserver-ee'):
+        print('database instance endpoint engine is sqlserver-ee')
+        set_engine_name='sqlserver'
+        set_database_name='rdsadmin'
     else:
         print('Current database instance endpoint engine is not supported')
-
-
 
     if(isSource):
         resource_endpoint_name="CDKSourceEndpoint"
@@ -153,7 +170,7 @@ def create_database_instance_endpoint(self, isSource, data_store, set_username):
         set_endpoint_type="target"
         set_endpoint_identifier="cdk-target-endpoint"
 
-    if(data_store.engine == 'mysql'): # MySQL does not have a database_name
+    if(data_store.engine == 'mysql' or data_store.engine == 'mariadb'): # MySQL does not have a database_name
         database_instance_endpoint = dms.CfnEndpoint(data_store, resource_endpoint_name,
             endpoint_type=set_endpoint_type, #EndpointType
             engine_name=set_engine_name, #engineName; engine_name = source_endpoint # cluster.engine
