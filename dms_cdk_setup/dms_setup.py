@@ -199,7 +199,7 @@ def create_database_instance_endpoint(self, isSource, data_store, set_username):
 
 # TODO: Add support for DynamoDB endpoint
 # DynamoDB uses a "service access role"
-def create_ddb_endpoint(self, isSource, data_store, set_username):
+def create_dynamodb_endpoint(self, isSource, data_store, set_username):
     # set_engine_name=data_store.engine.engine_type
     # set_port=data_store.instance_endpoint.port
     # set_server_name=data_store.instance_endpoint.hostname

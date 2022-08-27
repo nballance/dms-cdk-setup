@@ -1,10 +1,8 @@
-from aws_cdk import (
-    aws_rds as rds,
-    aws_ec2 as ec2,
-    aws_s3 as s3,
-    RemovalPolicy,
-    aws_dynamodb as dynamodb
-)
+from dms_cdk_setup.data_stores.dynamodb_table import create_dynamodb_table
+from dms_cdk_setup.data_stores.s3_bucket import create_s3_bucket
+from dms_cdk_setup.data_stores.rds_database_instance import create_database_instance
+from dms_cdk_setup.data_stores.rds_database_cluster import create_aurora
+
 from .dms_setup import *
 
 # TODO Would it be better to have an, isvalidsource/isvalidtarget function rather than this if(isSource) block?
@@ -12,13 +10,19 @@ from .dms_setup import *
 # TODO: Create the data store for either source or target from engine input, username, and security group to apply
 def create_data_store(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name):
     # TODO: Check if this is a valid source
+    aurora_engines=['aurora-postgresql', 'aurora-mysql']
+    rds_instance_engines=['mariadb', 'mysql', 'oracle-ee', 'oracle-se2', 'oracle-se1', 'oracle-se', 'postgres', 'sqlserver-ee', 'sqlserver-se', 'sqlserver-ex', 'sqlserver-web']
+
+
     if(isSource):
-        if(engine == 'aurora-postgresql' or engine == 'aurora-mysql'):
+        # if(engine == 'aurora-postgresql' or engine == 'aurora-mysql'):
+        if(engine in aurora_engines):
             data_store=create_aurora(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
             data_store_endpoint=create_aurora_endpoint(self, isSource, data_store, username)
 
         # TODO: make a list of possible RDS DB instances and check if in list
-        elif (engine == 'postgres' or engine == 'mariadb' or engine == 'mysql' or engine == 'oracle-ee' or engine == 'oracle-se2' or engine == 'oracle-se1' or engine == 'oracle-se' or engine == 'postgres' or engine == 'sqlserver-ee' or engine == 'sqlserver-se' or engine == 'sqlserver-ex' or engine == 'sqlserver-web'):
+        # elif (engine == 'postgres' or engine == 'mariadb' or engine == 'mysql' or engine == 'oracle-ee' or engine == 'oracle-se2' or engine == 'oracle-se1' or engine == 'oracle-se' or engine == 'postgres' or engine == 'sqlserver-ee' or engine == 'sqlserver-se' or engine == 'sqlserver-ex' or engine == 'sqlserver-web'):
+        elif (engine in rds_instance_engines):
             data_store=create_database_instance(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
             data_store_endpoint=create_database_instance_endpoint(self, isSource, data_store, username)
 
@@ -55,16 +59,16 @@ def create_data_store(self, isSource, engine, username, self_referencing_securit
     
     # TODO: Check if this is a valid target
     else:
-        if(engine == 'aurora-postgresql' or engine == 'aurora-mysql'):
+        if(engine in aurora_engines):
             data_store=create_aurora(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
             data_store_endpoint=create_aurora_endpoint(self, isSource, data_store, username)
-        elif (engine == 'postgres' or engine == 'mariadb' or engine == 'mysql' or engine == 'oracle-ee' or engine == 'oracle-se2' or engine == 'oracle-se1' or engine == 'oracle-se' or engine == 'postgres' or engine == 'sqlserver-ee' or engine == 'sqlserver-se' or engine == 'sqlserver-ex' or engine == 'sqlserver-web'):
+        elif (engine in rds_instance_engines):
             data_store=create_database_instance(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
             data_store_endpoint=create_database_instance_endpoint(self, isSource, data_store, username)
 
         elif (engine == 'dynamodb'):
-            data_store=create_ddb_table(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
-            data_store_endpoint=create_ddb_endpoint(self, isSource, data_store, username)
+            data_store=create_dynamodb_table(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
+            data_store_endpoint=create_dynamodb_endpoint(self, isSource, data_store, username)
 
         elif (engine == 's3'):
             data_store=create_s3_bucket(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name)
@@ -80,159 +84,16 @@ def create_data_store(self, isSource, engine, username, self_referencing_securit
         # elif(target_engine == 'postgres'):
         #     target='postgres'
 
-        # TODO: S3
         # TODO: Redshift
-        # TODO: DynamoDB
         # TODO: Kafka
         # TODO: Kinesis
-        # TODO: DynamoDB
         # TODO: Neptune
         # TODO: Redis
         # TODO: OpenSearch
         # TODO: Babelfish
         else:
-            print('create_data_store Target is undocumented')
+            print('create_data_store Target is not implemented')
         return data_store_endpoint
-
-
-# TODO: Create functions to create each data store
-def create_aurora(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name):
-    if(engine == 'aurora-postgresql'):
-        print('aurora-postgresql')
-        set_engine=rds.DatabaseClusterEngine.aurora_postgres(version=rds.AuroraPostgresEngineVersion.VER_12_11) # Default Aurora PostgreSQL engine version is 12.11
-        cluster_parameter_group_aurora={
-            "rds.logical_replication": "1"
-        }
-    else: #(engine == 'aurora-mysql'):
-        print('aurora-mysql')
-        set_engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_3_01_0) # Default Aurora MySQL engine version is 3.01.0
-        cluster_parameter_group_aurora={
-            "binlog_format": "ROW"
-        }
-
-    if(isSource):
-        identifier="cdk-source"
-    else:
-        identifier="cdk-target"
-
-
-    cluster = rds.DatabaseCluster(self, stack_name,
-        engine=set_engine,  # Aurora MySQL: engine=rds.DatabaseClusterEngine.aurora_mysql(version=rds.AuroraMysqlEngineVersion.VER_2_08_1),
-        credentials=rds.Credentials.from_generated_secret(username),  # Optional - will default to 'admin' username and generated password
-        instances=1, #TODO: comment out if no instances deployed, need to find out how to deploy only writer
-        cluster_identifier=identifier,
-        # parameters=add_parameter()
-        instance_props=rds.InstanceProps(
-            # TODO: Make this publicly accessible and launch in public subnet
-            # instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL),
-            security_groups=[self_referencing_security_group],
-            vpc_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
-            ),
-            vpc=vpc,   
-        ),
-        parameters=cluster_parameter_group_aurora
-    )
-    cluster.apply_removal_policy(RemovalPolicy.DESTROY)
-
-    return cluster
-
-# TODO: Create valid RDS instance types: mariadb mysql oracle-ee oracle-se2 oracle-se1 oracle-se postgres sqlserver-ee sqlserver-se sqlserver-ex sqlserver-web
-# TODO: Test Endpoint failed: Application-Status: 1020912, Application-Message: Failed to connect Network error has occurred, Application-Detailed-Message: RetCode: SQL_ERROR SqlState: 08001 NativeError: 101 Message: [unixODBC]timeout expired
-# retrying fails...need to check networking
-def create_database_instance(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name):
-    if(isSource):
-        identifier="cdk-source"
-    else:
-        identifier="cdk-target"
-
-    if(engine == 'mariadb'): 
-        print('mariadb')
-        set_engine=rds.DatabaseInstanceEngine.MARIADB
-    elif(engine == 'mysql'): 
-        print('mysql')
-        set_engine=rds.DatabaseInstanceEngine.MYSQL
-
-    elif(engine == 'postgres'):
-        print('postgres')
-        set_engine=rds.DatabaseInstanceEngine.POSTGRES
-    elif(engine == 'sqlserver-ee'): 
-        print('sqlserver-ee')
-        print('    license included')
-        set_license_model=rds.LicenseModel.LICENSE_INCLUDED,
-        set_engine=rds.DatabaseInstanceEngine.SQL_SERVER_EE
-    elif(engine == 'sqlserver-se'): 
-        print('sqlserver-se')
-        set_license_model=rds.LicenseModel.LICENSE_INCLUDED,
-        print('    license included')
-        set_engine=rds.DatabaseInstanceEngine.SQL_SERVER_SE  
-    elif(engine == 'sqlserver-ex'): 
-        print('sqlserver-ex')
-        set_engine=rds.DatabaseInstanceEngine.SQL_SERVER_EX
-    elif(engine == 'sqlserver-web'): 
-        print('sqlserver-web')
-        set_engine=rds.DatabaseInstanceEngine.SQL_SERVER_WEB
-    '''
-    elif(engine == 'oracle-ee'): # Cannot test/deploy Oracle in personal account
-        print('oracle-ee')
-        set_engine=rds.DatabaseInstanceEngine.oracle_se2(version=rds.OracleEngineVersion.VER_19_0_0_0_2020_04_R1)   
-    elif(engine == 'oracle-se2'): # Cannot test/deploy Oracle in personal account
-        print('oracle se2')
-        set_engine=rds.DatabaseInstanceEngine.oracle_se2(version=rds.OracleEngineVersion.VER_19_0_0_0_2020_04_R1) 
-    elif(engine == 'oracle-se1'): # Cannot test/deploy Oracle in personal account
-        print('oracle-se1')
-        set_engine=rds.DatabaseInstanceEngine.oracle_se2(version=rds.OracleEngineVersion.VER_19_0_0_0_2020_04_R1)    
-    elif(engine == 'oracle-se'): # Cannot test/deploy Oracle in personal account
-        print('oracle-se')
-        set_engine=rds.DatabaseInstanceEngine.oracle_se2(version=rds.OracleEngineVersion.VER_19_0_0_0_2020_04_R1) 
-    '''
-    if(engine == 'sqlserver-ee' or engine == 'sqlserver-se'):  # If this is a license-included engine
-        instance = rds.DatabaseInstance(self, stack_name,
-            engine=set_engine,
-            instance_identifier=identifier,
-            # license_model=set_license_model,
-            license_model=rds.LicenseModel.LICENSE_INCLUDED,
-            # optional, defaults to m5.large
-            instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.XLARGE), # SQL Server Instance Class support - https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_SQLServer.html#SQLServer.Concepts.General.InstanceClasses
-            credentials=rds.Credentials.from_generated_secret(username),  # Optional - will default to 'admin' username and generated password
-            vpc=vpc,
-            vpc_subnets=ec2.SubnetSelection( # Double check same networking subnets, no new subnets created
-                subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
-            ),
-            security_groups=[self_referencing_security_group],
-        )
-    else:
-        instance = rds.DatabaseInstance(self, stack_name,
-            engine=set_engine,
-            instance_identifier=identifier,
-            # optional, defaults to m5.large
-            instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.SMALL),
-            credentials=rds.Credentials.from_generated_secret(username),  # Optional - will default to 'admin' username and generated password
-            vpc=vpc,
-            vpc_subnets=ec2.SubnetSelection( # Double check same networking subnets, no new subnets created
-                subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
-            ),
-            security_groups=[self_referencing_security_group],
-        )
-    instance.apply_removal_policy(RemovalPolicy.DESTROY)
-
-    return instance
-
-def create_ddb_table(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name):
-    table = dynamodb.Table(self, "Table",
-    partition_key=dynamodb.Attribute(name="id", type=dynamodb.AttributeType.STRING),
-    # sort_key=dynamodb.Attribute(name="sort_key", type=dynamodb.AttributeType.STRING),
-    )
-    table.apply_removal_policy(RemovalPolicy.DESTROY)
-    return table
-
-
-# TODO: Add s3 as source/target, trying 'get_cdk_identifier' instead of IF/ELSE check...
-def create_s3_bucket(self, isSource, engine, username, self_referencing_security_group, vpc, stack_name):
-    bucket = s3.Bucket(self, "Bucket") # Change bucket to stack_name if successful
-    bucket.apply_removal_policy(RemovalPolicy.DESTROY)
-    return bucket
-
 
 # Simple function to map the isSource value to the CDK identifier value -- possibly use this in the dms_setup file
 def get_cdk_identifier(isSource):

@@ -1,15 +1,6 @@
-from distutils import core
 from aws_cdk import (
-    # Duration,
     Stack,
-    aws_dms as dms,
-    aws_ec2 as ec2,
-    aws_rds as rds,
-    aws_s3 as s3,
-    RemovalPolicy,
 )
-import json
-
 from constructs import Construct
 
 from .vpc_setup import *
@@ -35,8 +26,16 @@ class DmsCdkSetupStack(Stack):
         source_engine='postgres'
         # source_password='replaceme123' #TODO: It is not best practice to have password in CDK, can manually retrieve from secrets manager
         source_username='syscdk'
-        target_engine = 'aurora-postgresql'
+        target_engine = 'dynamodb'
         target_username=source_username
+        
+# Add user in put using input function
+# >>> while True:
+# ...     try:
+# ...         x = int(input("Please enter a number: "))
+# ...         break
+# ...     except ValueError:
+# ...         print("Oops!  That was no valid number.  Try again...")
 
         # Create VPC and Security Group
         vpc=create_VPC(self)
